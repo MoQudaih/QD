@@ -39,7 +39,7 @@ const PainRow = ({ p, index }) => {
   const tiltX = hover ? -mouse.y*4 : 0;
   const tiltY = hover ?  mouse.x*6 : 0;
   return (
-    <div ref={ref} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    <div ref={ref} className="qd-problem-row" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{ display:'grid',gridTemplateColumns:'80px 1fr 80px 1fr',gap:32,padding:'44px 32px',alignItems:'center',position:'relative',
         opacity:seen?1:0,
         transform:seen?`perspective(1400px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`:'perspective(1400px) rotateX(20deg) translateY(60px) translateZ(-120px)',
@@ -49,10 +49,10 @@ const PainRow = ({ p, index }) => {
         borderTop:index===0?'1px solid var(--border-1)':'none',borderBottom:'1px solid var(--border-1)',
         boxShadow:hover?'0 24px 48px rgba(0,0,0,0.4),inset 0 0 0 1px rgba(166,240,79,0.2)':'none' }}>
       <div style={{ position:'absolute',left:0,top:0,bottom:0,width:3,background:'var(--acid)',boxShadow:'0 0 16px var(--acid)',transform:hover?'scaleY(1)':'scaleY(0)',transformOrigin:'top',transition:'transform 400ms cubic-bezier(0.65,0,0.35,1)' }} />
-      <div style={{ fontFamily:'var(--font-display)',fontSize:72,fontWeight:700,lineHeight:1,color:'transparent',WebkitTextStroke:hover?'1.5px var(--acid)':'1px var(--fg3)',letterSpacing:'-0.04em',transform:hover?'translateZ(60px) scale(1.12)':'translateZ(20px) scale(1)',transition:'transform 500ms cubic-bezier(0.34,1.56,0.64,1),-webkit-text-stroke 300ms ease',textShadow:hover?'0 0 32px rgba(166,240,79,0.5)':'none' }}>{p.n}</div>
+      <div className="qd-problem-number" style={{ fontFamily:'var(--font-display)',fontSize:72,fontWeight:700,lineHeight:1,color:'transparent',WebkitTextStroke:hover?'1.5px var(--acid)':'1px var(--fg3)',letterSpacing:'-0.04em',transform:hover?'translateZ(60px) scale(1.12)':'translateZ(20px) scale(1)',transition:'transform 500ms cubic-bezier(0.34,1.56,0.64,1),-webkit-text-stroke 300ms ease',textShadow:hover?'0 0 32px rgba(166,240,79,0.5)':'none' }}>{p.n}</div>
       <div style={{ fontFamily:'var(--font-display)',fontSize:24,lineHeight:1.3,fontWeight:500,color:hover?'var(--fg1)':'var(--fg2)',letterSpacing:'-0.01em',transform:hover?'translateZ(40px)':'translateZ(10px)',transition:'color 280ms ease,transform 500ms cubic-bezier(0.34,1.56,0.64,1)' }}>{p.pain}</div>
-      <div style={{ display:'grid',placeItems:'center',transform:hover?'translateZ(50px) scale(1.2)':'translateZ(20px) scale(1)',transition:'transform 500ms cubic-bezier(0.34,1.56,0.64,1)' }}><ConnectorArrow start={seen} /></div>
-      <div style={{ fontFamily:'var(--font-display)',fontSize:24,lineHeight:1.3,fontWeight:500,color:'var(--fg1)',letterSpacing:'-0.01em',opacity:seen?1:0,transform:seen?(hover?'translateZ(40px) translateX(0)':'translateZ(10px)'):'translateZ(0) translateX(20px)',transition:`opacity 600ms ease ${index*140+900}ms,transform 500ms cubic-bezier(0.34,1.56,0.64,1)` }}>{p.fix}</div>
+      <div className="qd-problem-arrow" style={{ display:'grid',placeItems:'center',transform:hover?'translateZ(50px) scale(1.2)':'translateZ(20px) scale(1)',transition:'transform 500ms cubic-bezier(0.34,1.56,0.64,1)' }}><ConnectorArrow start={seen} /></div>
+      <div className="qd-problem-fix" style={{ fontFamily:'var(--font-display)',fontSize:24,lineHeight:1.3,fontWeight:500,color:'var(--fg1)',letterSpacing:'-0.01em',opacity:seen?1:0,transform:seen?(hover?'translateZ(40px) translateX(0)':'translateZ(10px)'):'translateZ(0) translateX(20px)',transition:`opacity 600ms ease ${index*140+900}ms,transform 500ms cubic-bezier(0.34,1.56,0.64,1)` }}>{p.fix}</div>
     </div>
   );
 };

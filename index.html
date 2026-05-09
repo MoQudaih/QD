@@ -90,8 +90,8 @@ const Stagger = ({ children, step=80, base=0, lift=32, duration=800 }) =>
   );
 
 // ── Marquee ──────────────────────────────────────────────────
-const Marquee = ({ children, speed=45, style }) => (
-  <div style={{ overflow:'hidden', position:'relative', ...style }}>
+const Marquee = ({ children, speed=45, style, className='' }) => (
+  <div className={className} style={{ overflow:'hidden', position:'relative', ...style }}>
     <div className="qd-marquee-track" style={{ animationDuration:`${speed}s` }}>
       {children}{children}
     </div>
@@ -104,8 +104,8 @@ const Eyebrow = ({ children, color }) => (
 );
 
 // ── Btn ──────────────────────────────────────────────────────
-const Btn = ({ variant='primary', size='md', children, onClick, icon }) => (
-  <button onClick={onClick} className={`qd-btn qd-btn-${variant} qd-btn-${size}`}>
+const Btn = ({ variant='primary', size='md', children, onClick, icon, className='' }) => (
+  <button onClick={onClick} className={`qd-btn qd-btn-${variant} qd-btn-${size} ${className}`.trim()}>
     {children}{icon && <span style={{fontWeight:400}}>{icon}</span>}
   </button>
 );
@@ -290,52 +290,62 @@ window.__QD = { ...window.__QD, ChatbotWindow, DashboardMini, CodeBlock, Browser
 ═══════════════════════════════════════════════════════════ -->
 <script type="text/babel">
 const Nav = () => (
-  <nav style={{ position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'20px 40px',display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(10,11,13,0.7)',backdropFilter:'blur(20px)',borderBottom:'1px solid var(--border-1)' }}>
-    <a href="#" className="qd-nav-logo" style={{ display:'flex',alignItems:'center',gap:10,textDecoration:'none',position:'relative' }}>
+  <nav className="qd-nav" style={{ position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'20px 40px',display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(10,11,13,0.7)',backdropFilter:'blur(20px)',borderBottom:'1px solid var(--border-1)' }}>
+    <a href="/" className="qd-nav-logo" style={{ display:'flex',alignItems:'center',gap:10,textDecoration:'none',position:'relative' }}>
       <span style={{ position:'relative',display:'inline-flex',height:36,width:36,borderRadius:8,overflow:'hidden',boxShadow:'0 0 0 1px var(--border-1)' }}>
         <img src="assets/qd-logo.jpeg" alt="QD Systems" className="qd-logo-img" style={{ height:'100%',width:'100%',objectFit:'cover',display:'block',filter:'contrast(1.08) brightness(1.05)' }} />
         <span className="qd-sheen" />
       </span>
     </a>
-    <div style={{ display:'flex',alignItems:'center',gap:28 }}>
+    <div className="qd-nav-links qd-mobile-hide" style={{ display:'flex',alignItems:'center',gap:28 }}>
       {['Services','Work','Process','Contact'].map(l => (
         <a key={l} href={`#${l.toLowerCase()}`} style={{ fontFamily:'var(--font-display)',fontSize:14,fontWeight:500,color:'var(--fg2)',textDecoration:'none',transition:'color 200ms ease' }}
           onMouseEnter={e=>e.target.style.color='var(--acid)'} onMouseLeave={e=>e.target.style.color='var(--fg2)'}>{l}</a>
       ))}
-      <Btn variant="primary" size="sm" icon="→">Build it</Btn>
+      <Btn variant="primary" size="sm" icon="→" onClick={() => { window.location.href = '/contact'; }}>Build it</Btn>
     </div>
+    <Btn variant="primary" size="sm" className="qd-nav-cta qd-mobile-only" icon="→" onClick={() => { window.location.href = '/contact'; }}>
+      <>
+        <span className="qd-desktop-label">Build it</span>
+        <span className="qd-mobile-label">Build</span>
+      </>
+    </Btn>
   </nav>
 );
 
-const Footer = () => (
-  <footer style={{ padding:'64px 40px 32px',borderTop:'1px solid var(--border-1)',background:'var(--obsidian)' }}>
-    <div style={{ maxWidth:1280,margin:'0 auto' }}>
-      <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:40,marginBottom:48 }}>
-        <div>
+const Footer = () => {
+  const socials = [
+    { label:'Instagram', url:'https://instagram.com/qdsystems' },
+    { label:'TikTok', url:'https://tiktok.com/@qdsystems' },
+  ];
+
+  return (
+    <footer className="qd-footer" style={{ padding:'64px 40px 32px',borderTop:'1px solid var(--border-1)',background:'var(--obsidian)' }}>
+      <div style={{ maxWidth:1280,margin:'0 auto' }}>
+      <div className="qd-footer-grid" style={{ display:'grid',gridTemplateColumns:'1fr auto',gap:40,marginBottom:48,alignItems:'start' }}>
+        <div className="qd-footer-brand">
           <span style={{ position:'relative',display:'inline-flex',height:88,width:88,borderRadius:14,overflow:'hidden',boxShadow:'0 0 0 1px var(--border-1),0 12px 40px rgba(0,0,0,0.5)' }}>
             <img src="assets/qd-logo.jpeg" alt="QD" style={{ height:'100%',width:'100%',objectFit:'cover',display:'block' }} />
             <span className="qd-footer-logo-sheen" />
           </span>
-          <div style={{ fontFamily:'var(--font-body)',fontSize:14,color:'var(--fg3)',marginTop:24,maxWidth:280 }}>Tell us the problem. We ship the solution.</div>
         </div>
-        {[
-          { h:'Services', l:['Chatbots','Websites','Tracking','Custom systems'] },
-          { h:'Company',  l:['About','Process','Work','Contact'] },
-          { h:'Connect',  l:['Email','LinkedIn','X / Twitter','GitHub'] },
-        ].map(c => (
-          <div key={c.h}>
-            <div className="qd-eyebrow" style={{ marginBottom:12 }}>{c.h}</div>
-            {c.l.map(i => <div key={i} style={{ fontFamily:'var(--font-body)',fontSize:14,color:'var(--fg2)',padding:'4px 0',cursor:'pointer' }}>{i}</div>)}
+        <div className="qd-footer-connect">
+          <div className="qd-eyebrow" style={{ marginBottom:14 }}>Connect</div>
+          <div className="qd-footer-social-list qd-footer-social">
+            {socials.map(({ label, url }) => (
+              <a key={label} href={url} target="_blank" rel="noreferrer" className="qd-footer-social-link">{label}</a>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
-      <div style={{ borderTop:'1px solid var(--border-1)',paddingTop:24,display:'flex',justifyContent:'space-between',fontFamily:'var(--font-mono)',fontSize:11,color:'var(--fg3)',letterSpacing:'0.1em',textTransform:'uppercase' }}>
+      <div className="qd-footer-meta qd-footer-bottom" style={{ borderTop:'1px solid var(--border-1)',paddingTop:24,display:'flex',justifyContent:'space-between',fontFamily:'var(--font-mono)',fontSize:11,color:'var(--fg3)',letterSpacing:'0.1em',textTransform:'uppercase' }}>
         <div>© 2026 QD SYSTEMS · ALL SYSTEMS GO</div>
         <div>V2.0 · BUILT IN UAE</div>
       </div>
     </div>
-  </footer>
-);
+    </footer>
+  );
+};
 
 window.__QD = { ...window.__QD, Nav, Footer };
 </script>
@@ -387,10 +397,10 @@ const Hero = () => {
   });
 
   return (
-    <section style={{ position:'relative',minHeight:'100vh',paddingTop:80,overflow:'hidden',perspective:2000,background:'var(--obsidian)' }}>
+    <section className="qd-hero-section" style={{ position:'relative',minHeight:'100vh',paddingTop:80,overflow:'hidden',perspective:2000,background:'var(--obsidian)' }}>
       {/* Ambient QD wordmark */}
-      <div style={{ position:'fixed',inset:0,zIndex:0,pointerEvents:'none',display:'grid',placeItems:'center',transformStyle:'preserve-3d' }}>
-        <div style={{ display:'flex',alignItems:'center',gap:'0.02em',filter:`drop-shadow(0 0 ${30+p*60}px rgba(166,240,79,${0.18+p*0.35}))` }}>
+      <div className="qd-hero-ambient" style={{ position:'fixed',inset:0,zIndex:0,pointerEvents:'none',display:'grid',placeItems:'center',transformStyle:'preserve-3d' }}>
+        <div className="qd-hero-ambient-wordmark" style={{ display:'flex',alignItems:'center',gap:'0.02em',filter:`drop-shadow(0 0 ${30+p*60}px rgba(166,240,79,${0.18+p*0.35}))` }}>
           <div style={L(sideAlpha,{ transform:`translateX(-${sideOff}vw) rotateY(${ry-10}deg) rotateX(${rx}deg)` })}>Q</div>
           <div style={L(qAlpha,{ transform:`rotateY(${ry}deg) rotateX(${rx}deg) scale(${qScale})`,opacity:qFade,WebkitTextStroke:`${1.5+p*4}px rgba(166,240,79,${qAlpha})` })}>D</div>
         </div>
@@ -401,23 +411,23 @@ const Hero = () => {
       <div style={{ position:'fixed',inset:0,zIndex:1,pointerEvents:'none',background:'var(--obsidian)',opacity:p<0.85?0:Math.min(1,(p-0.85)/0.1)*(1-Math.max(0,(p-0.95)*10)) }} />
 
       {/* Foreground */}
-      <div style={{ position:'relative',zIndex:2,maxWidth:1280,margin:'0 auto',padding:'120px 40px 60px',opacity:cOp,transform:`translateY(${cLift}px)`,transition:'opacity 400ms ease-out' }}>
+      <div className="qd-hero-wrap" style={{ position:'relative',zIndex:2,maxWidth:1280,margin:'0 auto',padding:'120px 40px 60px',opacity:cOp,transform:`translateY(${cLift}px)`,transition:'opacity 400ms ease-out' }}>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:24 }}>
           <span style={{ width:8,height:8,background:'var(--acid)',borderRadius:2,boxShadow:'0 0 12px var(--acid)',animation:'qd-pulse 1.6s ease-in-out infinite',display:'inline-block' }} />
           <Eyebrow color="var(--acid)">// SYSTEM ONLINE · 2026</Eyebrow>
         </div>
-        <h1 style={{ fontFamily:'var(--font-display)',fontSize:'clamp(48px,8vw,112px)',fontWeight:600,letterSpacing:'-0.04em',lineHeight:0.95,margin:0,maxWidth:1100,color:'var(--bone)' }}>
+        <h1 className="qd-hero-title" style={{ fontFamily:'var(--font-display)',fontSize:'clamp(48px,8vw,112px)',fontWeight:600,letterSpacing:'-0.04em',lineHeight:0.95,margin:0,maxWidth:1100,color:'var(--bone)' }}>
           Tell us the problem.<br/>
           <span style={{ color:'var(--acid)' }}>We ship</span> the <em style={{ fontFamily:'var(--font-serif)',fontWeight:400 }}>system</em>.
         </h1>
-        <p style={{ fontFamily:'var(--font-body)',fontSize:22,color:'var(--fg2)',maxWidth:580,marginTop:32,lineHeight:1.4 }}>
+        <p className="qd-hero-subtitle" style={{ fontFamily:'var(--font-body)',fontSize:22,color:'var(--fg2)',maxWidth:580,marginTop:32,lineHeight:1.4 }}>
           Chatbots that close. Sites that convert. Tracking that holds. Built for owners, not committees.
         </p>
-        <div style={{ display:'flex',gap:14,marginTop:40 }}>
-          <Btn variant="primary" size="lg" icon="→">Build it</Btn>
+        <div className="qd-hero-actions" style={{ display:'flex',gap:14,marginTop:40 }}>
+          <Btn variant="primary" size="lg" icon="→" onClick={() => { window.location.href = '/contact'; }}>Build it</Btn>
           <Btn variant="ghost" size="lg" icon="↗">See the work</Btn>
         </div>
-        <div style={{ marginTop:96,display:'grid',gridTemplateColumns:'repeat(3,1fr)',borderTop:'1px solid var(--border-1)',borderBottom:'1px solid var(--border-1)' }}>
+        <div className="qd-hero-stats" style={{ marginTop:96,display:'grid',gridTemplateColumns:'repeat(3,1fr)',borderTop:'1px solid var(--border-1)',borderBottom:'1px solid var(--border-1)' }}>
           {[{n:'5–7d',l:'avg. build time'},{n:'99.9%',l:'uptime'},{n:'24/7',l:'support'}].map((s,i)=>(
             <div key={i} style={{ padding:'24px 20px',borderLeft:i===0?'none':'1px solid var(--border-1)' }}>
               <div style={{ fontFamily:'var(--font-display)',fontWeight:600,fontSize:36,letterSpacing:'-0.02em',color:'var(--bone)' }}>{s.n}</div>
@@ -428,7 +438,7 @@ const Hero = () => {
       </div>
 
       {/* Scroll hint */}
-      <div style={{ position:'fixed',bottom:32,left:'50%',transform:'translateX(-50%)',zIndex:3,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'var(--fg3)',opacity:Math.max(0,1-scroll*5),display:'flex',alignItems:'center',gap:10,pointerEvents:'none' }}>
+      <div className="qd-hero-scroll-hint" style={{ position:'fixed',bottom:32,left:'50%',transform:'translateX(-50%)',zIndex:3,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'var(--fg3)',opacity:Math.max(0,1-scroll*5),display:'flex',alignItems:'center',gap:10,pointerEvents:'none' }}>
         <span style={{ width:24,height:1,background:'var(--fg3)',display:'inline-block' }} />SCROLL<span style={{ width:24,height:1,background:'var(--fg3)',display:'inline-block' }} />
       </div>
     </section>
@@ -445,13 +455,14 @@ window.__QD = { ...window.__QD, Hero };
 <script type="text/babel" src="components/beforeafter.jsx"></script>
 <script type="text/babel" src="components/process.jsx"></script>
 <script type="text/babel" src="components/work.jsx"></script>
+<script type="text/babel" src="components/livewebsites.jsx"></script>
 <script type="text/babel" src="components/cta.jsx"></script>
 
 <!-- ═══════════════════════════════════════════════════════════
      APP MOUNT
 ═══════════════════════════════════════════════════════════ -->
 <script type="text/babel">
-const { Nav, Footer, Hero, Problem, Services, BeforeAfter, Process, Work, CTA } = window.__QD;
+const { Nav, Footer, Hero, Problem, Services, BeforeAfter, Process, Work, LiveWebsites, CTA } = window.__QD;
 
 const App = () => (
   <>
@@ -462,6 +473,7 @@ const App = () => (
     <BeforeAfter />
     <Process />
     <Work />
+    <LiveWebsites />
     <CTA />
     <Footer />
   </>

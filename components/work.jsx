@@ -12,8 +12,8 @@ const Work = () => (
   <section id="work" className="qd-section qd-bridge-receive" data-bridge="acid"
     style={{ position:'relative',background:'var(--obsidian)',padding:'200px 40px',borderTop:'1px solid var(--border-1)',zIndex:5,overflow:'hidden' }}>
     <div style={{ maxWidth:1280,margin:'0 auto',position:'relative' }}>
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:60,alignItems:'flex-end',marginBottom:80 }}>
-        <SectionLetter letter="D" />
+      <div className="qd-work-head qd-mobile-stack" style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:60,alignItems:'flex-end',marginBottom:80 }}>
+        <div className="qd-section-letter qd-mobile-no-rotate"><SectionLetter letter="D" /></div>
         <Reveal delay={120} lift={32}>
           <Eyebrow color="var(--acid)">// 05 · SHIPPED</Eyebrow>
           <h2 style={{ fontFamily:'var(--font-display)',fontWeight:600,fontSize:'clamp(56px,8vw,120px)',letterSpacing:'-0.04em',lineHeight:0.92,margin:'12px 0 24px',color:'var(--bone)' }}>
@@ -25,7 +25,7 @@ const Work = () => (
       <div style={{ display:'flex',flexDirection:'column',gap:24 }}>
         {projects.map((p,i) => (
           <Reveal key={i} delay={i*80} lift={48} duration={1000}>
-            <div className="qd-lift"
+            <div className="qd-lift qd-work-card qd-mobile-stack"
               style={{ display:'grid',gridTemplateColumns:i%2===0?'1.3fr 1fr':'1fr 1.3fr',gap:24,background:'var(--obsidian-3)',border:'1px solid var(--border-1)',borderRadius:16,overflow:'hidden',minHeight:320,transition:'all 280ms cubic-bezier(0.16,1,0.3,1)' }}
               onMouseEnter={e=>e.currentTarget.style.borderColor='var(--acid)'}
               onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border-1)'}>
@@ -57,7 +57,7 @@ const Work = () => (
 
       <Reveal delay={200} lift={24}>
         <div style={{ marginTop:80,paddingTop:32,borderTop:'1px solid var(--border-2)' }}>
-          <Marquee speed={45}>
+          <Marquee speed={45} className="qd-work-marquee">
             {['CHATBOTS','/','WEBSITES','/','TRACKING','/','CUSTOM SYSTEMS','/','INTEGRATIONS','/','AUTOMATIONS','/'].map((t,i)=>(
               <span key={i} style={{ fontFamily:'var(--font-display)',fontWeight:700,fontSize:'clamp(64px,9vw,140px)',letterSpacing:'-0.04em',color:t==='/'?'var(--acid)':'transparent',WebkitTextStroke:t==='/'?'0':'1.5px var(--fg2)',padding:'0 32px',userSelect:'none' }}>{t}</span>
             ))}
