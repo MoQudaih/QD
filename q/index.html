@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quotation · QD Systems</title>
+  <link rel="icon" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/q/quote.css">
+</head>
+<body>
+  <main id="quote-root">
+    <section class="passcode-gate" id="passcode-gate">
+      <div class="passcode-card">
+        <img src="/assets/qd-logo.jpeg" alt="QD Systems" class="passcode-logo">
+        <h1 class="passcode-prompt" data-l="passcodePrompt"></h1>
+        <form id="passcode-form" autocomplete="off">
+          <input
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            id="passcode-input"
+            class="passcode-input"
+            placeholder="••••••"
+            required>
+          <button type="submit" class="passcode-submit" data-l="unlock"></button>
+        </form>
+        <p class="passcode-error" id="passcode-error" hidden></p>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/q/quote.js"></script>
+</body>
+</html>
