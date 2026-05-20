@@ -201,7 +201,8 @@ const Stagger = ({ children, step=80, base=0, lift=32, duration=800 }) =>
 const Marquee = ({ children, speed=45, style, className='' }) => (
   <div className={className} style={{ overflow:'hidden', position:'relative', ...style }}>
     <div className="qd-marquee-track" style={{ animationDuration:`${speed}s` }}>
-      {children}{children}
+      <div className="qd-marquee-copy">{children}</div>
+      <div className="qd-marquee-copy" aria-hidden="true">{children}</div>
     </div>
   </div>
 );

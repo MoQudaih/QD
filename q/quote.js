@@ -73,7 +73,7 @@ function pickText(field) {
 }
 
 function renderQuote(data) {
-  const totals = computeTotals(data.lineItems, data.vatPercent);
+  const totals = computeTotals(data.lineItems, data.vatPercent, data.pages?.price);
   const issued = data.createdAt
     ? new Date(data.createdAt._seconds ? data.createdAt._seconds * 1000 : data.createdAt).toLocaleDateString(currentLang === 'ar' ? 'ar-AE' : 'en-AE', { year:'numeric', month:'short', day:'numeric' })
     : '';
@@ -125,15 +125,17 @@ function renderQuote(data) {
       </table>
       <div class="totals-row">
         <div class="totals-box">
+          <div class="row"><span>${L(currentLang,'pagesPrice')}</span><span>${formatAED(totals.pagesSubtotal)}</span></div>
           <div class="row"><span>${L(currentLang,'subtotal')}</span><span>${formatAED(totals.subtotal)}</span></div>
           <div class="row"><span>${L(currentLang,'vat')} ${escape(data.vatPercent)}%</span><span>${formatAED(totals.vat)}</span></div>
           <div class="row grand"><span>${L(currentLang,'grandTotal')}</span><span>${formatAED(totals.grandTotal)}</span></div>
         </div>
       </div>
-      ${pickText(data.pages) ? `
+      ${(pickText(data.pages) || Number(data.pages?.price) > 0) ? `
         <div class="pages-block">
           <div class="label">${L(currentLang,'pagesIncluded')}</div>
-          <div class="pages-text">${escape(pickText(data.pages))}</div>
+          ${pickText(data.pages) ? `<div class="pages-text">${escape(pickText(data.pages))}</div>` : ''}
+          ${Number(data.pages?.price) > 0 ? `<div class="pages-text"><strong>${L(currentLang,'pagesPrice')}:</strong> AED ${formatAED(Number(data.pages.price) || 0)}</div>` : ''}
         </div>` : ''}
       <div class="terms-block">${escape(pickText(data.terms))}<br>${L(currentLang,'questions')}</div>
     </div>

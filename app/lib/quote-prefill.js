@@ -33,34 +33,46 @@ function detectLanguage(submission) {
   return 'en';
 }
 
+function normalizeSelectionValues(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === 'object') return Object.keys(raw).filter(Boolean);
+  return String(raw)
+    .split(/[,·•/]| and /i)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 export function prefillFromSubmission(submission) {
   const lineItems = [];
+  const seenCatalogKeys = new Set();
+  const addLineItem = (key) => {
+    if (!key || seenCatalogKeys.has(key)) return;
+    const lineItem = catalogToLineItem(key);
+    if (!lineItem) return;
+    seenCatalogKeys.add(key);
+    lineItems.push(lineItem);
+  };
 
   // 1. Website line item, sized by neededPages count
   const pageCount = countNeededPages(getAnswer(submission, 'neededPages'));
   const siteKey = pickSiteCatalogKey(pageCount);
-  if (siteKey) lineItems.push(catalogToLineItem(siteKey));
+  addLineItem(siteKey);
 
-  // 2. Required features → catalog matches
+  // 2. Required features → add matching feature line items directly.
   const reqFeatures = submission.selectedRequiredFeatures || getAnswer(submission, 'requiredFeatures') || {};
-  const featuresFlat = typeof reqFeatures === 'string'
-    ? reqFeatures.toLowerCase()
-    : (Array.isArray(reqFeatures) ? reqFeatures.join(' ').toLowerCase() : Object.keys(reqFeatures).join(' ').toLowerCase());
-
-  if (featuresFlat.includes('online') && featuresFlat.includes('order')) lineItems.push(catalogToLineItem('online-ordering'));
-  if (featuresFlat.includes('multi') && featuresFlat.includes('lang'))    lineItems.push(catalogToLineItem('multilang'));
-  if (featuresFlat.includes('seo'))                                       lineItems.push(catalogToLineItem('seo-foundation'));
+  normalizeSelectionValues(reqFeatures).forEach((featureKey) => {
+    addLineItem(featureKey);
+  });
 
   // 3. Optional services → catalog matches
   const optServices = submission.selectedOptionalServices || getAnswer(submission, 'optionalServices') || {};
-  const optFlat = typeof optServices === 'string'
-    ? optServices.toLowerCase()
-    : (Array.isArray(optServices) ? optServices.join(' ').toLowerCase() : Object.keys(optServices).join(' ').toLowerCase());
-  if (optFlat.includes('maintenance')) lineItems.push(catalogToLineItem('maintenance-3m'));
+  const optFlat = normalizeSelectionValues(optServices).join(' ').toLowerCase();
+  if (optFlat.includes('maintenance')) addLineItem('maintenance-3m');
 
   // 4. Logo design — if client said they DON'T have a logo
   if (getAnswer(submission, 'hasLogo') === false || getAnswer(submission, 'hasLogo') === 'no') {
-    lineItems.push(catalogToLineItem('logo-design'));
+    addLineItem('logo-design');
   }
 
   // 5. Customer snapshot
@@ -77,7 +89,7 @@ export function prefillFromSubmission(submission) {
   return {
     customer,
     lineItems: lineItems.filter(Boolean),
-    pages: { en: pagesEn, ar: '' },
+    pages: { en: pagesEn, ar: '', price: 0 },
     language: detectLanguage(submission),
     sourceSubmission: {
       businessName: getAnswer(submission, 'businessName') || '',

@@ -424,8 +424,42 @@ a:hover { color: var(--acid); }
   transform: translate3d(0,0,0);
 }
 
+.qd-marquee-copy {
+  display: inline-flex;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
 .qd-work-marquee .qd-marquee-track {
   animation-duration: 12s !important;
+}
+
+.qd-work-marquee-shell {
+  position: relative;
+}
+
+.qd-work-marquee-bleed {
+  display: block;
+  width: 100vw;
+  width: 100dvw;
+  max-width: 100vw;
+  max-width: 100dvw;
+  margin-left: calc(50% - 50vw);
+  margin-left: calc(50% - 50dvw);
+  margin-right: calc(50% - 50vw);
+  margin-right: calc(50% - 50dvw);
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  overflow: hidden;
+}
+
+.qd-work-marquee-bleed .qd-marquee-track,
+.qd-work-marquee-bleed .qd-marquee-copy {
+  justify-content: flex-start;
+}
+
+.qd-work-marquee-bleed .qd-marquee-copy > span:first-child {
+  padding-left: 0 !important;
 }
 
 /* ── Animations ── */

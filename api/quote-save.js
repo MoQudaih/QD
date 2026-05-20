@@ -60,9 +60,19 @@ export default async function handler(req, res) {
     console.log('[quote-save] loading quote before merge');
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: 'Quote not found' });
+    const existingQuote = snap.data() || {};
 
     console.log('[quote-save] writing merged updates');
     await ref.set(safe, { merge: true });
+
+    if (markSent && existingQuote.submissionId) {
+      console.log('[quote-save] marking submission as Quoted', { submissionId: existingQuote.submissionId });
+      await db.collection('projectSubmissions').doc(existingQuote.submissionId).set({
+        status: 'Quoted',
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
     const after = await ref.get();
     console.log('[quote-save] save complete');
     return res.status(200).json({ id, ...after.data() });

@@ -32,8 +32,8 @@ const WorkMarqueeStrip = ({ language = 'en', compact = false }) => {
   const copy = workCopy[language] || workCopy.en;
   return (
     <Reveal delay={compact ? 80 : 200} lift={24}>
-      <div style={{ marginTop: compact ? 0 : 80, paddingTop: compact ? 28 : 32, borderTop:'1px solid var(--border-2)' }}>
-        <Marquee speed={12} className="qd-work-marquee">
+      <div className="qd-work-marquee-shell" style={{ marginTop: compact ? 0 : 80, paddingTop: compact ? 28 : 32, borderTop:'1px solid var(--border-2)' }}>
+        <Marquee speed={12} className="qd-work-marquee qd-work-marquee-bleed">
           {copy.marquee.map((t,i)=>(
             <span key={i} style={{ fontFamily:'var(--font-display)',fontWeight:700,fontSize:'clamp(64px,9vw,140px)',letterSpacing:'-0.04em',color:t==='/'?'var(--acid)':'transparent',WebkitTextStroke:t==='/'?'0':'1.5px var(--fg2)',padding:'0 32px',userSelect:'none' }}>{t}</span>
           ))}

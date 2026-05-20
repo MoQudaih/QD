@@ -46,7 +46,7 @@ import { computeTotals, formatAED } from '/app/lib/quote-totals.js';
 
 const root = document.getElementById('qd-admin-root');
 const allowedAdminEmails = null;
-const statusOptions = ['New', 'Reviewed', 'Contacted', 'Quoted', 'Accepted', 'Rejected', 'Archived'];
+const statusOptions = ['New', 'Reviewed', 'Contacted', 'Quoted', 'Accepted', 'Under Construction', 'Completed', 'Rejected', 'Archived'];
 const priorityOptions = ['Low', 'Normal', 'High', 'VIP'];
 
 const state = {
@@ -59,12 +59,15 @@ const state = {
   dataError: '',
   saveError: '',
   copyFeedback: '',
+  adminToast: '',
   submissions: [],
   filters: {
     search: '',
     status: 'All',
     priority: 'All'
   },
+  pipelinePage: 0,
+  budgetProjectsPage: 0,
   selectedId: null,
   drawerDraft: null,
   quotesBySubmissionId: {},
@@ -75,6 +78,7 @@ const state = {
 let unsubscribeSnapshot = null;
 let unsubscribeQuotesSnapshot = null;
 let copyFeedbackTimeout = null;
+let adminToastTimeout = null;
 
 const fieldLabels = {
   businessName: 'Business Name',
@@ -594,6 +598,25 @@ const getFilteredSubmissions = () => {
   });
 };
 
+const getSubmissionActivityMs = (submission) => submission.lastUpdatedAtMs || submission.createdAtMs || submission.submittedAtMs || 0;
+
+const scrollToPipelineSection = () => {
+  requestAnimationFrame(() => {
+    const pipelineSection = document.getElementById('qd-submission-pipeline');
+    pipelineSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+};
+
+const applyPipelineStatusFilter = (status, { scroll = false } = {}) => {
+  const nextStatus = !status || status === 'All' ? 'All' : status;
+  state.filters.status = nextStatus;
+  render();
+
+  if (scroll) {
+    scrollToPipelineSection();
+  }
+};
+
 const getAnalytics = (items) => {
   const counts = {
     total: items.length,
@@ -602,6 +625,8 @@ const getAnalytics = (items) => {
     Contacted: 0,
     Quoted: 0,
     Accepted: 0,
+    'Under Construction': 0,
+    Completed: 0,
     Rejected: 0,
     Archived: 0
   };
@@ -609,7 +634,21 @@ const getAnalytics = (items) => {
   const urgencyMap = new Map();
   const priorityMap = new Map();
   const budgetNumbers = [];
+  const budgetProjects = [];
   let contactReadyCount = 0;
+  let quotedCount = 0;
+  let acceptedCount = 0;
+  let missingEmailCount = 0;
+  let missingPhoneCount = 0;
+  let missingBudgetCount = 0;
+  let missingLaunchDateCount = 0;
+  const agingBuckets = {
+    fresh: 0,
+    warm: 0,
+    stale: 0
+  };
+  const openStatuses = new Set(['New', 'Reviewed', 'Contacted', 'Quoted', 'Under Construction']);
+  const now = Date.now();
 
   items.forEach((submission) => {
     counts[submission.status] = (counts[submission.status] || 0) + 1;
@@ -620,13 +659,45 @@ const getAnalytics = (items) => {
     const priority = submission.priority || 'Normal';
     priorityMap.set(priority, (priorityMap.get(priority) || 0) + 1);
 
-    const numericBudget = Number(String(getAnswer(submission, 'budgetRange') || '').replace(/[^\d.]/g, ''));
+    const budgetRaw = getAnswer(submission, 'budgetRange');
+    const numericBudget = Number(String(budgetRaw || '').replace(/[^\d.]/g, ''));
     if (!Number.isNaN(numericBudget) && numericBudget > 0) {
       budgetNumbers.push(numericBudget);
+      budgetProjects.push({
+        id: submission.id,
+        businessName: formatValue(getAnswer(submission, 'businessName')),
+        budget: numericBudget,
+        status: submission.status || 'New'
+      });
     }
 
-    if (getAnswer(submission, 'businessEmail') && getAnswer(submission, 'businessPhone')) {
+    const hasEmail = Boolean(getAnswer(submission, 'businessEmail'));
+    const hasPhone = Boolean(getAnswer(submission, 'businessPhone'));
+    const hasBudget = !Number.isNaN(numericBudget) && numericBudget > 0;
+    const hasLaunchDate = Boolean(parseLaunchDateValue(getAnswer(submission, 'launchDate')));
+    const urgencyRaw = String(getAnswer(submission, 'urgency') || '').trim().toLowerCase();
+    const isPriorityHot = ['high', 'vip'].includes(String(priority).toLowerCase());
+    const isUrgencyHot = ['urgent', 'soon'].includes(urgencyRaw);
+    const isContactReady = hasEmail && hasPhone;
+
+    if (isContactReady) {
       contactReadyCount += 1;
+    }
+
+    if (!hasEmail) missingEmailCount += 1;
+    if (!hasPhone) missingPhoneCount += 1;
+    if (!hasBudget) missingBudgetCount += 1;
+    if (!hasLaunchDate) missingLaunchDateCount += 1;
+
+    if (submission.status === 'Quoted') quotedCount += 1;
+    if (submission.status === 'Accepted') acceptedCount += 1;
+
+    if (openStatuses.has(submission.status)) {
+      const activityMs = getSubmissionActivityMs(submission);
+      const ageDays = activityMs ? Math.floor((now - activityMs) / 86400000) : 0;
+      if (ageDays <= 2) agingBuckets.fresh += 1;
+      else if (ageDays <= 7) agingBuckets.warm += 1;
+      else agingBuckets.stale += 1;
     }
   });
 
@@ -650,7 +721,22 @@ const getAnalytics = (items) => {
     lowestBudget,
     budgetCount: budgetNumbers.length,
     budgetCaptureRate,
-    contactReadyCount
+    contactReadyCount,
+    quotedCount,
+    acceptedCount,
+    quoteConversionRate: quotedCount ? Math.round((acceptedCount / quotedCount) * 100) : 0,
+    budgetProjects: budgetProjects.sort((a, b) => b.budget - a.budget),
+    agingBuckets: [
+      ['0-2 days', agingBuckets.fresh],
+      ['3-7 days', agingBuckets.warm],
+      ['7+ days', agingBuckets.stale]
+    ],
+    missingInfo: [
+      ['Missing email', missingEmailCount],
+      ['Missing phone', missingPhoneCount],
+      ['Missing budget', missingBudgetCount],
+      ['Missing launch date', missingLaunchDateCount]
+    ]
   };
 };
 
@@ -736,13 +822,16 @@ const renderBudgetStats = (analytics) => {
 };
 
 const renderOverviewCards = (analytics) => {
+  const activeSnapshotStatus = state.filters.status === 'All' ? 'Total' : state.filters.status;
   const cardMeta = [
-    ['Total', analytics.counts.total, 'All live submissions'],
-    ['New', analytics.counts.New || 0, 'Awaiting review'],
-    ['Reviewed', analytics.counts.Reviewed || 0, 'Assessed'],
-    ['Quoted', analytics.counts.Quoted || 0, 'Proposal stage'],
-    ['Accepted', analytics.counts.Accepted || 0, 'Approved'],
-    ['Archived', analytics.counts.Archived || 0, 'Closed or parked']
+    ['Total', 'All', analytics.counts.total, 'All live submissions'],
+    ['New', 'New', analytics.counts.New || 0, 'Awaiting review'],
+    ['Reviewed', 'Reviewed', analytics.counts.Reviewed || 0, 'Assessed'],
+    ['Quoted', 'Quoted', analytics.counts.Quoted || 0, 'Proposal stage'],
+    ['Accepted', 'Accepted', analytics.counts.Accepted || 0, 'Approved'],
+    ['Under Construction', 'Under Construction', analytics.counts['Under Construction'] || 0, 'Build in progress'],
+    ['Completed', 'Completed', analytics.counts.Completed || 0, 'Delivered and closed'],
+    ['Archived', 'Archived', analytics.counts.Archived || 0, 'Closed or parked']
   ];
 
   return `
@@ -754,27 +843,72 @@ const renderOverviewCards = (analytics) => {
         </div>
       </div>
       <div class="qd-admin-kpi-grid">
-      ${cardMeta.map(([label, value, meta]) => `
-        <article class="qd-admin-card qd-admin-kpi-card">
+      ${cardMeta.map(([label, status, value, meta]) => {
+        const isActive = activeSnapshotStatus === label;
+        const ariaLabel = label === 'Total'
+          ? 'Show all submissions'
+          : `Filter pipeline to ${label} submissions`;
+
+        return `
+        <button
+          class="qd-admin-card qd-admin-kpi-card ${isActive ? 'is-active' : ''}"
+          type="button"
+          role="button"
+          data-action="set-pipeline-status"
+          data-status="${escapeHtml(status)}"
+          aria-label="${escapeHtml(ariaLabel)}"
+          aria-pressed="${isActive ? 'true' : 'false'}"
+        >
           <span class="qd-admin-card-label">${escapeHtml(label)}</span>
           <strong class="qd-admin-kpi-value">${value}</strong>
           <p>${escapeHtml(meta)}</p>
-        </article>
-      `).join('')}
+        </button>
+      `;
+      }).join('')}
       </div>
     </section>
   `;
 };
 
+const renderBudgetProjectList = (items) => {
+  if (!items.length) {
+    return `<div class="qd-admin-empty"><strong>No budgets yet</strong>Only submissions with usable numeric budgets will appear here.</div>`;
+  }
+
+  const pageSize = 3;
+  const pageCount = Math.ceil(items.length / pageSize);
+  const activePage = Math.min(state.budgetProjectsPage, Math.max(pageCount - 1, 0));
+  const pageStart = activePage * pageSize;
+  const visibleItems = items.slice(pageStart, pageStart + pageSize);
+
+  return `
+    <div class="qd-admin-budget-sort-note">Highest to lowest</div>
+    <div class="qd-admin-budget-project-list">
+      ${visibleItems.map((item) => `
+        <button class="qd-admin-budget-project" type="button" data-action="open-submission" data-id="${escapeHtml(item.id)}">
+          <div class="qd-admin-budget-project-copy">
+            <strong>${escapeHtml(item.businessName)}</strong>
+            <span>${escapeHtml(item.status)}</span>
+          </div>
+          <div class="qd-admin-budget-project-value">${escapeHtml(formatCurrencyNumber(item.budget))}</div>
+        </button>
+      `).join('')}
+    </div>
+    ${pageCount > 1 ? `
+      <div class="qd-admin-budget-pagination">
+        <button class="qd-admin-budget-nav" type="button" data-action="budget-projects-prev" ${activePage === 0 ? 'disabled' : ''} aria-label="Previous budgets">←</button>
+        <span>${activePage + 1} / ${pageCount}</span>
+        <button class="qd-admin-budget-nav" type="button" data-action="budget-projects-next" ${activePage >= pageCount - 1 ? 'disabled' : ''} aria-label="Next budgets">→</button>
+      </div>
+    ` : ''}
+  `;
+};
+
 const renderAnalyticsCards = (analytics) => {
-  const hasBudgetSignal = Boolean(analytics.budgetCount && analytics.averageBudget);
-  const budgetLabel = hasBudgetSignal ? formatCurrencyNumber(analytics.averageBudget) : 'Not enough data';
   const topStage = analytics.stage[0]?.[0] || 'No signal yet';
-  const topPriority = analytics.priority[0]?.[0] || 'No signal yet';
-  const topUrgency = analytics.urgency[0]?.[0] || 'No signal yet';
-  const contactReadiness = analytics.counts.total
-    ? `${analytics.contactReadyCount}/${analytics.counts.total}`
-    : '0/0';
+  const staleLeadCount = analytics.agingBuckets.find(([label]) => label === '7+ days')?.[1] || 0;
+  const missingInfoTotal = analytics.missingInfo.reduce((sum, [, count]) => sum + count, 0);
+  const highestBudgetProject = analytics.budgetProjects[0];
 
   return `
     <section class="qd-admin-section">
@@ -786,13 +920,6 @@ const renderAnalyticsCards = (analytics) => {
       </div>
       <div class="qd-admin-analytics-grid">
       <article class="qd-admin-card qd-admin-analytics-card">
-        <div class="qd-admin-card-label">Budget Signal</div>
-        <h3 class="qd-admin-budget-value" ${hasBudgetSignal ? `title="${escapeHtml(formatCurrencyNumber(analytics.averageBudget))}"` : ''}>${escapeHtml(budgetLabel)}</h3>
-        <p>${hasBudgetSignal ? 'Average captured project budget.' : 'Budget details will appear once numeric budget values are captured.'}</p>
-        ${renderBudgetStats(analytics)}
-      </article>
-
-      <article class="qd-admin-card qd-admin-analytics-card">
         <div class="qd-admin-card-label">Lead Stage</div>
         <h3>${escapeHtml(topStage)}</h3>
         <p>Most common pipeline status across current submissions.</p>
@@ -800,47 +927,58 @@ const renderAnalyticsCards = (analytics) => {
       </article>
 
       <article class="qd-admin-card qd-admin-analytics-card">
-        <div class="qd-admin-card-label">Priority Mix</div>
-        <h3>${escapeHtml(topPriority)}</h3>
-        <p>How urgent the team should treat the current intake.</p>
-        ${renderBreakdown(analytics.priority, 'Priority counts will appear here.')}
+        <div class="qd-admin-card-label">Project Budgets</div>
+        <h3>${escapeHtml(highestBudgetProject ? formatCurrencyNumber(highestBudgetProject.budget) : 'No budgets')}</h3>
+        <p>Submissions with captured budgets, sorted from highest to lowest. Click any project to open its details.</p>
+        ${renderBudgetProjectList(analytics.budgetProjects)}
       </article>
 
       <article class="qd-admin-card qd-admin-analytics-card">
-        <div class="qd-admin-card-label">Urgency Mix</div>
-        <h3>${escapeHtml(topUrgency)}</h3>
-        <p>How quickly incoming projects expect to launch.</p>
-        ${renderBreakdown(analytics.urgency, 'Urgency selections will appear here.')}
+        <div class="qd-admin-card-label">Aging Leads</div>
+        <h3>${escapeHtml(staleLeadCount ? `${staleLeadCount} stale` : 'Fresh queue')}</h3>
+        <p>Open leads grouped by how long they have been sitting without recent movement.</p>
+        ${renderBreakdown(analytics.agingBuckets, 'Lead aging will appear here once submissions arrive.')}
       </article>
 
       <article class="qd-admin-card qd-admin-analytics-card">
-        <div class="qd-admin-card-label">Contact Readiness</div>
-        <h3>${escapeHtml(contactReadiness)}</h3>
-        <p>Submissions that include both email and phone contact details.</p>
+        <div class="qd-admin-card-label">Quote Pipeline</div>
+        <h3>${escapeHtml(`${analytics.acceptedCount}/${analytics.quotedCount || 0}`)}</h3>
+        <p>Accepted quotes out of all quoted submissions, with the current close rate.</p>
         <div class="qd-admin-list">
           <div class="qd-admin-list-item">
-            <span>Ready to contact</span>
-            <strong class="qd-admin-count-badge">${analytics.contactReadyCount}</strong>
+            <span>Quoted</span>
+            <strong class="qd-admin-count-badge">${analytics.quotedCount}</strong>
           </div>
           <div class="qd-admin-list-item">
-            <span>Need follow-up details</span>
-            <strong class="qd-admin-count-badge">${Math.max(analytics.counts.total - analytics.contactReadyCount, 0)}</strong>
+            <span>Accepted</span>
+            <strong class="qd-admin-count-badge">${analytics.acceptedCount}</strong>
+          </div>
+          <div class="qd-admin-list-item">
+            <span>Conversion</span>
+            <strong class="qd-admin-count-badge">${analytics.quoteConversionRate}%</strong>
           </div>
         </div>
+      </article>
+
+      <article class="qd-admin-card qd-admin-analytics-card">
+        <div class="qd-admin-card-label">Missing Info</div>
+        <h3>${escapeHtml(String(missingInfoTotal))}</h3>
+        <p>Key details still missing before the team can qualify and price submissions confidently.</p>
+        ${renderBreakdown(analytics.missingInfo.filter(([, count]) => count > 0), 'Missing-data gaps will appear here.')}
       </article>
       </div>
     </section>
   `;
 };
 
-const renderSubmissionRows = (items) => {
+const renderSubmissionRows = (items, emptyTitle = 'No submissions match this view', emptyText = 'Try a broader search or reset the pipeline filters.') => {
   if (!items.length) {
     return `
       <tr>
         <td colspan="8">
           <div class="qd-admin-empty">
-            <strong>No submissions match this view</strong>
-            Try a broader search or reset the pipeline filters.
+            <strong>${escapeHtml(emptyTitle)}</strong>
+            ${escapeHtml(emptyText)}
           </div>
         </td>
       </tr>
@@ -874,8 +1012,15 @@ const renderSubmissionRows = (items) => {
   `).join('');
 };
 
-const renderSubmissionCards = (items) => {
-  if (!items.length) return '';
+const renderSubmissionCards = (items, emptyTitle = 'No submissions match this view', emptyText = 'Try a broader search or reset the pipeline filters.') => {
+  if (!items.length) {
+    return `
+      <div class="qd-admin-empty">
+        <strong>${escapeHtml(emptyTitle)}</strong>
+        ${escapeHtml(emptyText)}
+      </div>
+    `;
+  }
 
   return items.map((submission) => `
     <button class="qd-admin-mobile-card" type="button" data-action="open-submission" data-id="${escapeHtml(submission.id)}">
@@ -920,8 +1065,33 @@ const renderSubmissionCards = (items) => {
   `).join('');
 };
 
+const renderPipelinePagination = (totalItems) => {
+  const pageSize = 5;
+  const pageCount = Math.ceil(totalItems / pageSize);
+  if (pageCount <= 1) return '';
+
+  const activePage = Math.min(state.pipelinePage, Math.max(pageCount - 1, 0));
+
+  return `
+    <div class="qd-admin-pagination">
+      <button class="qd-admin-pagination-btn" type="button" data-action="pipeline-page-prev" ${activePage === 0 ? 'disabled' : ''} aria-label="Previous projects">←</button>
+      <span>${activePage + 1} / ${pageCount}</span>
+      <button class="qd-admin-pagination-btn" type="button" data-action="pipeline-page-next" ${activePage >= pageCount - 1 ? 'disabled' : ''} aria-label="Next projects">→</button>
+    </div>
+  `;
+};
+
 const renderDashboard = () => {
   const filteredSubmissions = getFilteredSubmissions();
+  const activeSubmissions = filteredSubmissions.filter((submission) => submission.status !== 'Archived');
+  const archivedSubmissions = filteredSubmissions.filter((submission) => submission.status === 'Archived');
+  const pipelinePageSize = 5;
+  const pipelinePageCount = Math.ceil(activeSubmissions.length / pipelinePageSize);
+  const activePipelinePage = Math.min(state.pipelinePage, Math.max(pipelinePageCount - 1, 0));
+  const paginatedActiveSubmissions = activeSubmissions.slice(
+    activePipelinePage * pipelinePageSize,
+    (activePipelinePage + 1) * pipelinePageSize
+  );
   const analytics = getAnalytics(state.submissions);
 
   return `
@@ -930,7 +1100,7 @@ const renderDashboard = () => {
       ${renderOverviewCards(analytics)}
       ${renderAnalyticsCards(analytics)}
 
-      <article class="qd-admin-card qd-admin-table-card">
+      <article class="qd-admin-card qd-admin-table-card" id="qd-submission-pipeline">
         <div class="qd-admin-section-head">
           <div>
             <div class="qd-eyebrow qd-admin-kicker">Submission Pipeline</div>
@@ -973,11 +1143,51 @@ const renderDashboard = () => {
                 <th>Date</th>
               </tr>
             </thead>
-            <tbody>${renderSubmissionRows(filteredSubmissions)}</tbody>
+            <tbody>${renderSubmissionRows(paginatedActiveSubmissions)}</tbody>
           </table>
         </div>
         <div class="qd-admin-mobile-list">
-          ${renderSubmissionCards(filteredSubmissions)}
+          ${renderSubmissionCards(paginatedActiveSubmissions)}
+        </div>
+        ${renderPipelinePagination(activeSubmissions.length)}
+      </article>
+
+      <article class="qd-admin-card qd-admin-table-card" id="qd-archived-submissions">
+        <div class="qd-admin-section-head">
+          <div>
+            <div class="qd-eyebrow qd-admin-kicker">Archived</div>
+            <h2>Archived submissions</h2>
+            <p>Closed or parked projects live here so the active pipeline stays focused on current work.</p>
+          </div>
+        </div>
+
+        <div class="qd-admin-table-wrap">
+          <table class="qd-admin-table">
+            <thead>
+              <tr>
+                <th>Business</th>
+                <th>Contact</th>
+                <th>Industry</th>
+                <th>Budget</th>
+                <th>Launch Date</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>${renderSubmissionRows(
+              archivedSubmissions,
+              'No archived submissions in this view',
+              'Archived projects will appear here when they match the current search and filters.'
+            )}</tbody>
+          </table>
+        </div>
+        <div class="qd-admin-mobile-list">
+          ${renderSubmissionCards(
+            archivedSubmissions,
+            'No archived submissions in this view',
+            'Archived projects will appear here when they match the current search and filters.'
+          )}
         </div>
       </article>
     </section>
@@ -1164,6 +1374,7 @@ const renderDrawer = () => {
 
       <section class="qd-admin-client-profile">
         <div class="qd-admin-client-profile-main">
+          <div class="qd-eyebrow qd-admin-kicker">Client Snapshot</div>
           <div class="qd-chip-row">
             <span class="qd-status-pill" data-tone="${escapeHtml(statusTone(submission.status))}">${escapeHtml(submission.status)}</span>
             <span class="qd-priority-pill" data-tone="${escapeHtml(priorityTone(submission.priority))}">${escapeHtml(submission.priority)}</span>
@@ -1176,16 +1387,24 @@ const renderDrawer = () => {
           </div>
           ${state.copyFeedback ? `<div class="qd-admin-copy-feedback">${escapeHtml(state.copyFeedback)}</div>` : ''}
         </div>
-        <div class="qd-admin-actions qd-admin-client-actions">
-          ${whatsappLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-whatsapp" href="${escapeHtml(whatsappLink)}" target="_blank" rel="noreferrer noopener">WhatsApp</a>` : ''}
-          ${callLink
-            ? `<a class="qd-btn qd-btn-sm qd-admin-action-call" href="${escapeHtml(callLink)}">Call</a>`
-            : '<button class="qd-btn qd-btn-sm qd-admin-action-call is-disabled" type="button" disabled aria-disabled="true">Call</button>'}
-          ${mailtoLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-secondary" href="${escapeHtml(mailtoLink)}">Email</a>` : ''}
-          ${renderQuoteButton(submission)}
-          <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="${draft.editMode ? 'cancel-edit-submission' : 'edit-submission'}">${draft.editMode ? 'Cancel Edit' : 'Edit Submission'}</button>
-          <button class="qd-btn qd-btn-sm qd-admin-action-primary" type="button" data-action="copy-summary">Copy Summary</button>
-          <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="archive-submission">Archive</button>
+        <div class="qd-admin-action-panel">
+          <div class="qd-admin-action-panel-head">
+            <span class="qd-admin-section-title">Client Actions</span>
+            <p>Reach out, open the quote, or update this submission without hunting through the drawer.</p>
+          </div>
+          <div class="qd-admin-actions qd-admin-client-actions qd-admin-client-actions-top">
+            ${whatsappLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-whatsapp" href="${escapeHtml(whatsappLink)}" target="_blank" rel="noreferrer noopener">WhatsApp</a>` : ''}
+            ${callLink
+              ? `<a class="qd-btn qd-btn-sm qd-admin-action-call" href="${escapeHtml(callLink)}">Call</a>`
+              : '<button class="qd-btn qd-btn-sm qd-admin-action-call is-disabled" type="button" disabled aria-disabled="true">Call</button>'}
+            ${mailtoLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-secondary" href="${escapeHtml(mailtoLink)}">Email</a>` : ''}
+            ${renderQuoteButton(submission)}
+          </div>
+          <div class="qd-admin-actions qd-admin-client-actions qd-admin-client-actions-bottom">
+            <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="${draft.editMode ? 'cancel-edit-submission' : 'edit-submission'}">${draft.editMode ? 'Cancel Edit' : 'Edit Submission'}</button>
+            <button class="qd-btn qd-btn-sm qd-admin-action-primary" type="button" data-action="copy-summary">Copy Summary</button>
+            <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="archive-submission">Archive</button>
+          </div>
         </div>
       </section>
 
@@ -1293,6 +1512,7 @@ const renderAppShell = (content) => {
 
         ${content}
       </div>
+      ${state.adminToast ? `<div class="qd-admin-toast" role="status" aria-live="polite">${escapeHtml(state.adminToast)}</div>` : ''}
       ${renderDrawer()}
       ${renderQuoteDrawer()}
     </div>
@@ -1407,6 +1627,16 @@ const setLoginLoading = (isLoading) => {
   render();
 };
 
+const showAdminToast = (message) => {
+  state.adminToast = message;
+  render();
+  clearTimeout(adminToastTimeout);
+  adminToastTimeout = setTimeout(() => {
+    state.adminToast = '';
+    render();
+  }, 2200);
+};
+
 const handleLogin = async (event) => {
   event.preventDefault();
   const emailInput = document.getElementById('admin-email');
@@ -1514,6 +1744,7 @@ const subscribeToSubmissions = () => {
 const saveDrawer = async (nextValues = {}) => {
   const selected = getSelectedSubmission();
   if (!selected) return;
+  const previousStatus = selected.status ?? 'New';
 
   const nextAnswers = { ...(selected.answers || {}) };
   for (const field of editableSubmissionFields) {
@@ -1548,6 +1779,9 @@ const saveDrawer = async (nextValues = {}) => {
       editMode: false,
       lastUpdatedAt: undefined
     };
+    if (payload.status !== previousStatus) {
+      showAdminToast(`Status changed to ${payload.status}`);
+    }
   } catch (error) {
     state.saveError = error?.message || 'Could not save submission changes.';
   } finally {
@@ -1569,6 +1803,39 @@ const handleDocumentClick = async (event) => {
 
   if (action === 'open-submission') {
     openSubmission(actionTarget.dataset.id);
+    return;
+  }
+
+  if (action === 'set-pipeline-status') {
+    const clickedStatus = actionTarget.dataset.status || 'All';
+    const nextStatus = state.filters.status === clickedStatus && clickedStatus !== 'All'
+      ? 'All'
+      : clickedStatus;
+    applyPipelineStatusFilter(nextStatus, { scroll: true });
+    return;
+  }
+
+  if (action === 'budget-projects-prev') {
+    state.budgetProjectsPage = Math.max(state.budgetProjectsPage - 1, 0);
+    render();
+    return;
+  }
+
+  if (action === 'budget-projects-next') {
+    state.budgetProjectsPage += 1;
+    render();
+    return;
+  }
+
+  if (action === 'pipeline-page-prev') {
+    state.pipelinePage = Math.max(state.pipelinePage - 1, 0);
+    render();
+    return;
+  }
+
+  if (action === 'pipeline-page-next') {
+    state.pipelinePage += 1;
+    render();
     return;
   }
 
@@ -1683,8 +1950,17 @@ const handleDocumentClick = async (event) => {
 const handleDocumentInput = (event) => {
   const filterField = event.target.dataset.field;
   if (filterField) {
+    if (filterField === 'status') {
+      state.pipelinePage = 0;
+      applyPipelineStatusFilter(event.target.value);
+      return;
+    }
+
     const { selectionStart, selectionEnd, value } = event.target;
     state.filters[filterField] = event.target.value;
+    if (filterField === 'search' || filterField === 'priority') {
+      state.pipelinePage = 0;
+    }
     render();
     if (filterField === 'search') {
       const nextInput = root.querySelector('[data-field="search"]');
@@ -1866,7 +2142,11 @@ const openQuoteByQuoteId = (quoteId) => {
 const openQuoteDrawer = (quote) => {
   state.quoteDrawer = {
     open: true,
-    quote: { ...quote, lineItems: [...(quote.lineItems || [])] },
+    quote: {
+      ...quote,
+      lineItems: [...(quote.lineItems || [])],
+      pages: { ...(quote.pages || {}), price: Number(quote.pages?.price) || 0 }
+    },
     dirty: false
   };
   render();
@@ -1902,7 +2182,7 @@ const applyQuoteChange = (path, value) => {
       cur = cur[parts[i]];
     }
     const last = parts[parts.length - 1];
-    cur[last] = (last === 'validDays' || last === 'vatPercent') ? Number(value) || 0 : value;
+    cur[last] = (last === 'validDays' || last === 'vatPercent' || path === 'pages.price') ? Number(value) || 0 : value;
   }
   state.quoteDrawer.dirty = true;
 };
@@ -1910,10 +2190,12 @@ const applyQuoteChange = (path, value) => {
 const updateQuoteTotalsPreview = () => {
   const q = state.quoteDrawer.quote;
   if (!q) return;
-  const t = computeTotals(q.lineItems, q.vatPercent);
+  const t = computeTotals(q.lineItems, q.vatPercent, q.pages?.price);
   const preview = document.querySelector('#qd-quote-drawer .qd-quote-totals');
   if (!preview) return;
   preview.innerHTML = `
+    <div class="qd-quote-totals-row"><span>Line items</span><span>${formatAED(t.lineItemsSubtotal)}</span></div>
+    <div class="qd-quote-totals-row"><span>Pages included</span><span>${formatAED(t.pagesSubtotal)}</span></div>
     <div class="qd-quote-totals-row"><span>Subtotal</span><span>${formatAED(t.subtotal)}</span></div>
     <div class="qd-quote-totals-row" style="opacity:0.85"><span>VAT ${q.vatPercent}%</span><span>${formatAED(t.vat)}</span></div>
     <div class="qd-quote-totals-row is-grand"><span>Total AED</span><span>${formatAED(t.grandTotal)}</span></div>
@@ -1985,7 +2267,7 @@ const renderQuoteDrawer = () => {
     return state.quoteToast ? `<div class="qd-quote-toast">${escTxt(state.quoteToast)}</div>` : '';
   }
   const q = state.quoteDrawer.quote;
-  const t = computeTotals(q.lineItems, q.vatPercent);
+  const t = computeTotals(q.lineItems, q.vatPercent, q.pages?.price);
   const statusLabel = q.status === 'active' ? 'View / Edit' : 'Edit';
 
   return `
@@ -2031,8 +2313,8 @@ const renderQuoteDrawer = () => {
 
         <div class="qd-quote-row" style="margin-top:8px">
           <select class="qd-quote-input qd-quote-catalog" data-qaction="add-from-catalog" style="flex:1">
-            <option value="">+ Add from catalog…</option>
-            ${CATALOG.map((c) => `<option value="${escAttr(c.key)}">${escTxt(c.name.en)} — AED ${c.defaultPrice}</option>`).join('')}
+            <option value="">+ Add feature…</option>
+            ${CATALOG.map((c) => `<option value="${escAttr(c.key)}">${escTxt(c.name.en)}${c.defaultPrice > 0 ? ` — AED ${c.defaultPrice}` : ''}</option>`).join('')}
           </select>
           <button type="button" class="qd-btn qd-btn-sm qd-admin-action-secondary" data-action="quote-add-custom-line">+ Custom</button>
         </div>
@@ -2040,8 +2322,11 @@ const renderQuoteDrawer = () => {
         <div class="qd-quote-section-label">PAGES INCLUDED</div>
         <input class="qd-quote-input" data-qfield="pages.en" value="${escAttr(q.pages?.en || '')}" placeholder="Home · About · Services · Contact">
         <input class="qd-quote-input" style="margin-top:6px" data-qfield="pages.ar" value="${escAttr(q.pages?.ar || '')}" placeholder="الرئيسية · ..." dir="rtl">
+        <input class="qd-quote-input" style="margin-top:6px" type="number" min="0" data-qfield="pages.price" value="${escAttr(q.pages?.price ?? 0)}" placeholder="Pages total price (AED)">
 
         <div class="qd-quote-totals">
+          <div class="qd-quote-totals-row"><span>Line items</span><span>${formatAED(t.lineItemsSubtotal)}</span></div>
+          <div class="qd-quote-totals-row"><span>Pages included</span><span>${formatAED(t.pagesSubtotal)}</span></div>
           <div class="qd-quote-totals-row"><span>Subtotal</span><span>${formatAED(t.subtotal)}</span></div>
           <div class="qd-quote-totals-row" style="opacity:0.85"><span>VAT ${q.vatPercent}%</span><span>${formatAED(t.vat)}</span></div>
           <div class="qd-quote-totals-row is-grand"><span>Total AED</span><span>${formatAED(t.grandTotal)}</span></div>
