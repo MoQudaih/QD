@@ -5,28 +5,22 @@ import admin from 'firebase-admin';
 
 let _app = null;
 let _db = null;
+let _auth = null;
 
 function getCredentials() {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const credentials = {
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+  };
 
-  if (projectId && clientEmail && privateKey) {
-    return { projectId, clientEmail, privateKey };
+  if (credentials.projectId && credentials.clientEmail && credentials.privateKey) {
+    return credentials;
   }
 
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) {
-    throw new Error(
-      'Firebase Admin env vars are missing. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in Vercel.'
-    );
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT is not valid JSON: ' + err.message);
-  }
+  throw new Error(
+    'Firebase Admin env vars are missing. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in Vercel.'
+  );
 }
 
 export function getAdminApp() {
@@ -47,6 +41,12 @@ export function getDb() {
   if (_db) return _db;
   _db = getAdminApp().firestore();
   return _db;
+}
+
+export function getAuth() {
+  if (_auth) return _auth;
+  _auth = getAdminApp().auth();
+  return _auth;
 }
 
 export { admin };
