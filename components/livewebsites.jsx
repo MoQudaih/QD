@@ -9,7 +9,7 @@ const liveCopy = {
     fallbackCta: 'Open live site ->',
     visitCta: 'VISIT SITE ->',
     buildCta: 'START A BUILD ->',
-    marquee: ['LIVE SYSTEMS', '/', 'REAL DEPLOYMENTS', '/', 'TRAFFIC', '/', 'CUSTOMERS', '/', 'LIVE SYSTEMS', '/'],
+    marquee: ['LIVE SYSTEMS', '•', 'REAL DEPLOYMENTS', '•', 'TRAFFIC', '•', 'CUSTOMERS', '•', 'LIVE SYSTEMS', '•'],
     eyebrow: '// 04 · LIVE SYSTEMS',
     titleA: 'Running in the real world.',
     titleB: 'Not mockups.',
@@ -28,8 +28,8 @@ const liveCopy = {
         url: 'https://www.tajalmalaki.ae/',
         domain: 'tajalmalaki.ae',
         description: 'Luxury event rental platform with live order tracking, premium inventory browsing, and streamlined booking flows built for UAE events.',
-        metrics: ['Real-time tracking', 'Mobile optimized', 'Firebase backend'],
-        stack: ['Firebase', 'Tracking', 'Realtime', 'Inventory', 'Booking']
+        metrics: ['Real-time tracking', 'Mobile optimized', 'Cloud backend'],
+        stack: ['Cloud', 'Tracking', 'Realtime', 'Inventory', 'Booking']
       },
       {
         id: '02',
@@ -51,7 +51,7 @@ const liveCopy = {
     fallbackCta: 'افتح الموقع ->',
     visitCta: 'زيارة الموقع ->',
     buildCta: 'ابدأ مشروعك ->',
-    marquee: ['أنظمة مباشرة', '/', 'مشاريع منشورة', '/', 'زيارات', '/', 'عملاء', '/', 'أنظمة مباشرة', '/'],
+    marquee: ['أنظمة مباشرة', '•', 'مشاريع منشورة', '•', 'زيارات', '•', 'عملاء', '•', 'أنظمة مباشرة', '•'],
     eyebrow: '// 04 · أنظمة مباشرة',
     titleA: 'تعمل في العالم الحقيقي.',
     titleB: 'وليست مجرد عرض.',
@@ -70,8 +70,8 @@ const liveCopy = {
         url: 'https://www.tajalmalaki.ae/',
         domain: 'tajalmalaki.ae',
         description: 'منصة فاخرة لتأجير الفعاليات مع تتبع مباشر للطلبات وتصفح راقٍ للمخزون ومسارات حجز مبسطة مهيأة لسوق الإمارات.',
-        metrics: ['تتبع مباشر', 'مهيأ للجوال', 'خلفية Firebase'],
-        stack: ['Firebase', 'تتبع', 'مباشر', 'مخزون', 'حجوزات']
+        metrics: ['تتبع مباشر', 'مهيأ للجوال', 'خلفية سحابية'],
+        stack: ['سحابي', 'تتبع', 'مباشر', 'مخزون', 'حجوزات']
       },
       {
         id: '02',
@@ -405,10 +405,10 @@ const LiveWebsites = ({ language = 'en' }) => {
       <div style={{ position: 'absolute', top: -40, left: '-8%', width: '40%', height: 420, background: 'radial-gradient(circle,rgba(166,240,79,0.14),transparent 72%)', filter: 'blur(36px)' }} />
       <div style={{ position: 'absolute', right: '-10%', bottom: 40, width: '38%', height: 360, background: 'radial-gradient(circle,rgba(166,240,79,0.12),transparent 68%)', filter: 'blur(42px)' }} />
 
-      <div style={{ position: 'absolute', top: 130, left: 0, right: 0, opacity: 0.08, pointerEvents: 'none' }}>
-        <Marquee speed={36}>
+      <div style={{ position: 'absolute', top: isMobile ? 24 : 18, left: 0, right: 0, opacity: 0.16, pointerEvents: 'none', overflow: 'hidden' }}>
+        <Marquee speed={26}>
           {copy.marquee.map((item, index) => (
-            <span key={index} style={{ padding: '0 28px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'clamp(68px,9vw,140px)', letterSpacing: '-0.05em', color: item === '/' ? 'var(--acid)' : 'transparent', WebkitTextStroke: item === '/' ? '0' : '1px rgba(244,241,234,0.18)' }}>
+            <span key={index} style={{ padding: item === '•' ? '0 18px' : '0 28px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: item === '•' ? 'clamp(22px,2.8vw,40px)' : 'clamp(68px,9vw,140px)', letterSpacing: item === '•' ? '0' : '-0.05em', color: item === '•' ? 'rgba(166,240,79,0.46)' : 'transparent', WebkitTextStroke: item === '•' ? '0' : '1px rgba(244,241,234,0.3)' }}>
               {item}
             </span>
           ))}

@@ -110,11 +110,24 @@ window.__QD.SectionLetter = SectionLetter;
 
 const Services = ({ language = 'en' }) => {
   const copy = servicesCopy[language] || servicesCopy.en;
+  const isMobile = useViewportFlag(760);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   return (
     <section id="services" className="qd-section" data-bridge="obsidian-2"
       style={{ position:'relative',background:'var(--obsidian)',padding:'160px 40px 200px',borderTop:'1px solid var(--border-1)',zIndex:5,overflow:'hidden' }}>
-      <div style={{ position:'absolute',inset:0,opacity:0.4,pointerEvents:'none',backgroundImage:'linear-gradient(rgba(244,241,234,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(244,241,234,0.03) 1px,transparent 1px)',backgroundSize:'64px 64px' }} />
+      <div style={{ position:'absolute',inset:0,pointerEvents:'none',background:'radial-gradient(circle at 14% 18%, rgba(166,240,79,0.15), transparent 24%), radial-gradient(circle at 86% 20%, rgba(166,240,79,0.08), transparent 22%), radial-gradient(circle at 72% 78%, rgba(166,240,79,0.09), transparent 18%), linear-gradient(180deg, #0b0c0e 0%, #090a0c 46%, #0d1013 100%)' }} />
+      <div style={{ position:'absolute',inset:0,opacity:0.38,pointerEvents:'none',backgroundImage:'linear-gradient(rgba(244,241,234,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(244,241,234,0.025) 1px,transparent 1px)',backgroundSize:isMobile ? '38px 38px' : '58px 58px',maskImage:'linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.55))' }} />
+      <div style={{ position:'absolute',inset:'10% auto auto 52%',width:isMobile ? 260 : 520,height:isMobile ? 260 : 520,border:'1px solid rgba(166,240,79,0.08)',borderRadius:'50%',transform:'translateX(-50%)',pointerEvents:'none' }} />
+      <div style={{ position:'absolute',inset:'22% auto auto 58%',width:isMobile ? 180 : 340,height:isMobile ? 180 : 340,border:'1px solid rgba(166,240,79,0.06)',borderRadius:'50%',transform:'translateX(-50%)',pointerEvents:'none' }} />
+      <div style={{ position:'absolute',left:isMobile ? '-8%' : '48%',top:isMobile ? 120 : 40,fontFamily:'var(--font-display)',fontSize:isMobile ? 'clamp(180px,42vw,260px)' : 'clamp(380px,38vw,620px)',fontWeight:700,letterSpacing:'-0.08em',lineHeight:0.82,color:'transparent',WebkitTextStroke:'1px rgba(166,240,79,0.075)',opacity:0.6,transform:'rotate(-6deg)',pointerEvents:'none',userSelect:'none' }}>QD</div>
+      <div style={{ position:'absolute',right:isMobile ? '-18%' : '-4%',bottom:isMobile ? 160 : 70,width:isMobile ? 260 : 420,height:isMobile ? 260 : 420,border:'1px solid rgba(166,240,79,0.07)',borderRadius:'32px',transform:'rotate(18deg)',pointerEvents:'none' }} />
+      <div style={{ position:'absolute',left:isMobile ? '-12%' : '8%',bottom:isMobile ? 110 : 40,width:isMobile ? 180 : 280,height:isMobile ? 180 : 280,background:'radial-gradient(circle, rgba(166,240,79,0.16), rgba(166,240,79,0.04) 42%, transparent 72%)',filter:'blur(24px)',pointerEvents:'none' }} />
+      <div style={{ position:'absolute',right:isMobile ? '-10%' : '14%',top:isMobile ? 220 : 180,width:isMobile ? 180 : 260,height:isMobile ? 180 : 260,background:'radial-gradient(circle, rgba(166,240,79,0.12), transparent 70%)',filter:'blur(30px)',pointerEvents:'none' }} />
+      <div style={{ position:'absolute',inset:'0 0 auto 0',height:isMobile ? 220 : 320,background:'linear-gradient(180deg, rgba(166,240,79,0.06), transparent 72%)',opacity:0.6,pointerEvents:'none' }} />
+      {!prefersReducedMotion && (
+        <div style={{ position:'absolute',top:'-12%',bottom:'-12%',left:'56%',width:isMobile ? 80 : 140,background:'linear-gradient(180deg, transparent, rgba(166,240,79,0.08), transparent)',filter:'blur(18px)',transform:'rotate(8deg)',pointerEvents:'none',animation:'qd-orbit 10s ease-in-out infinite' }} />
+      )}
       <div style={{ maxWidth:1280,margin:'0 auto',position:'relative' }}>
         <div className="qd-services-head" style={{ marginBottom:56 }}>
           <Reveal lift={32}>
