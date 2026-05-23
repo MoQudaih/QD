@@ -419,6 +419,25 @@ body.qd-admin-page.qd-modal-open {
   text-transform: uppercase;
 }
 
+.qd-admin-budget-sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 241, 234, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--acid);
+  cursor: pointer;
+  transition: border-color 180ms var(--ease-out), color 180ms var(--ease-out), background 180ms var(--ease-out), transform 160ms var(--ease-out);
+}
+
+.qd-admin-budget-sort-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(166, 240, 79, 0.24);
+  background: rgba(166, 240, 79, 0.08);
+}
+
 .qd-admin-budget-project {
   width: 100%;
   display: flex;
@@ -664,6 +683,28 @@ body.qd-admin-page.qd-modal-open {
   color: var(--acid);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.qd-admin-count-badge-amber {
+  background: rgba(255, 197, 92, 0.12);
+  border-color: rgba(255, 197, 92, 0.22);
+  color: #ffc55c;
+}
+
+.qd-admin-count-badge-red {
+  background: rgba(229, 75, 75, 0.12);
+  border-color: rgba(229, 75, 75, 0.22);
+  color: #ff8f8f;
+}
+
+.qd-admin-service-demand-item {
+  display: grid;
+  gap: 6px;
+}
+
+.qd-admin-service-demand-track {
+  height: 5px;
+  margin: 0 2px;
 }
 
 .qd-admin-pagination {

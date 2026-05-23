@@ -88,6 +88,7 @@ const state = {
   },
   pipelinePage: 0,
   budgetProjectsPage: 0,
+  budgetSortDirection: 'desc',
   selectedId: null,
   drawerDraft: null,
   quotesBySubmissionId: {},
@@ -731,6 +732,22 @@ const getFilteredSubmissions = () => {
 
 const getSubmissionActivityMs = (submission) => submission.lastUpdatedAtMs || submission.createdAtMs || submission.submittedAtMs || 0;
 
+const parseSubmissionServices = (submission) => {
+  const raw = getAnswer(submission, 'services');
+  if (Array.isArray(raw)) {
+    return raw.map((item) => formatLabel(item)).filter((item) => item && item !== 'Not Provided');
+  }
+
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((item) => formatLabel(item.trim()))
+      .filter((item) => item && item !== 'Not Provided');
+  }
+
+  return [];
+};
+
 const scrollToPipelineSection = () => {
   requestAnimationFrame(() => {
     const pipelineSection = document.getElementById('qd-submission-pipeline');
@@ -773,6 +790,14 @@ const getAnalytics = (items) => {
   let missingPhoneCount = 0;
   let missingBudgetCount = 0;
   let missingLaunchDateCount = 0;
+  const serviceDemandMap = new Map();
+  const responseBuckets = {
+    underHour: 0,
+    withinDay: 0,
+    overDay: 0,
+    notContacted: 0
+  };
+  const responseTimesHours = [];
   const agingBuckets = {
     fresh: 0,
     warm: 0,
@@ -810,10 +835,17 @@ const getAnalytics = (items) => {
     const isPriorityHot = ['high', 'vip'].includes(String(priority).toLowerCase());
     const isUrgencyHot = ['urgent', 'soon'].includes(urgencyRaw);
     const isContactReady = hasEmail && hasPhone;
+    const services = parseSubmissionServices(submission);
+    const createdMs = submission.createdAtMs || submission.submittedAtMs || 0;
+    const updatedMs = submission.lastUpdatedAtMs || 0;
 
     if (isContactReady) {
       contactReadyCount += 1;
     }
+
+    services.forEach((service) => {
+      serviceDemandMap.set(service, (serviceDemandMap.get(service) || 0) + 1);
+    });
 
     if (!hasEmail) missingEmailCount += 1;
     if (!hasPhone) missingPhoneCount += 1;
@@ -822,6 +854,16 @@ const getAnalytics = (items) => {
 
     if (submission.status === 'Quoted') quotedCount += 1;
     if (submission.status === 'Accepted') acceptedCount += 1;
+
+    if ((submission.status || 'New') !== 'New' && createdMs && updatedMs && updatedMs >= createdMs) {
+      const hoursToFirstContact = (updatedMs - createdMs) / 3600000;
+      responseTimesHours.push(hoursToFirstContact);
+      if (hoursToFirstContact < 1) responseBuckets.underHour += 1;
+      else if (hoursToFirstContact < 24) responseBuckets.withinDay += 1;
+      else responseBuckets.overDay += 1;
+    } else if ((submission.status || 'New') === 'New') {
+      responseBuckets.notContacted += 1;
+    }
 
     if (openStatuses.has(submission.status)) {
       const activityMs = getSubmissionActivityMs(submission);
@@ -838,6 +880,11 @@ const getAnalytics = (items) => {
   const highestBudget = budgetNumbers.length ? Math.max(...budgetNumbers) : null;
   const lowestBudget = budgetNumbers.length ? Math.min(...budgetNumbers) : null;
   const budgetCaptureRate = items.length ? Math.round((budgetNumbers.length / items.length) * 100) : 0;
+  const averageResponseHours = responseTimesHours.length
+    ? Math.round((responseTimesHours.reduce((sum, value) => sum + value, 0) / responseTimesHours.length) * 10) / 10
+    : null;
+  const serviceDemand = [...serviceDemandMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topService = serviceDemand[0]?.[0] || '—';
 
   return {
     counts,
@@ -857,6 +904,10 @@ const getAnalytics = (items) => {
     acceptedCount,
     quoteConversionRate: quotedCount ? Math.round((acceptedCount / quotedCount) * 100) : 0,
     budgetProjects: budgetProjects.sort((a, b) => b.budget - a.budget),
+    averageResponseHours,
+    responseBuckets,
+    serviceDemand,
+    topService,
     agingBuckets: [
       ['0-2 days', agingBuckets.fresh],
       ['3-7 days', agingBuckets.warm],
@@ -1006,14 +1057,19 @@ const renderBudgetProjectList = (items) => {
     return `<div class="qd-admin-empty"><strong>No budgets yet</strong>Only submissions with usable numeric budgets will appear here.</div>`;
   }
 
+  const sortedItems = state.budgetSortDirection === 'asc'
+    ? [...items].sort((a, b) => a.budget - b.budget)
+    : [...items].sort((a, b) => b.budget - a.budget);
   const pageSize = 3;
-  const pageCount = Math.ceil(items.length / pageSize);
+  const pageCount = Math.ceil(sortedItems.length / pageSize);
   const activePage = Math.min(state.budgetProjectsPage, Math.max(pageCount - 1, 0));
   const pageStart = activePage * pageSize;
-  const visibleItems = items.slice(pageStart, pageStart + pageSize);
+  const visibleItems = sortedItems.slice(pageStart, pageStart + pageSize);
 
   return `
-    <div class="qd-admin-budget-sort-note">Highest to lowest</div>
+    <button class="qd-admin-budget-sort-note qd-admin-budget-sort-toggle" type="button" data-action="toggle-budget-sort">
+      ${state.budgetSortDirection === 'asc' ? '↑ Lowest first' : '↓ Highest first'}
+    </button>
     <div class="qd-admin-budget-project-list">
       ${visibleItems.map((item) => `
         <button class="qd-admin-budget-project" type="button" data-action="open-submission" data-id="${escapeHtml(item.id)}">
@@ -1038,8 +1094,12 @@ const renderBudgetProjectList = (items) => {
 const renderAnalyticsCards = (analytics) => {
   const topStage = analytics.stage[0]?.[0] || 'No signal yet';
   const staleLeadCount = analytics.agingBuckets.find(([label]) => label === '7+ days')?.[1] || 0;
-  const missingInfoTotal = analytics.missingInfo.reduce((sum, [, count]) => sum + count, 0);
   const highestBudgetProject = analytics.budgetProjects[0];
+  const responseTimeHeadline = analytics.averageResponseHours !== null ? `${analytics.averageResponseHours} hrs` : '—';
+  const responseTimeSubtitle = analytics.averageResponseHours !== null
+    ? 'Avg. time before first contact'
+    : 'No contacts logged yet';
+  const highestServiceCount = analytics.serviceDemand[0]?.[1] || 0;
 
   return `
     <section class="qd-admin-section">
@@ -1072,30 +1132,48 @@ const renderAnalyticsCards = (analytics) => {
       </article>
 
       <article class="qd-admin-card qd-admin-analytics-card">
-        <div class="qd-admin-card-label">Quote Pipeline</div>
-        <h3>${escapeHtml(`${analytics.acceptedCount}/${analytics.quotedCount || 0}`)}</h3>
-        <p>Accepted quotes out of all quoted submissions, with the current close rate.</p>
+        <div class="qd-admin-card-label">Response Time</div>
+        <h3>${escapeHtml(responseTimeHeadline)}</h3>
+        <p>${escapeHtml(responseTimeSubtitle)}</p>
         <div class="qd-admin-list">
           <div class="qd-admin-list-item">
-            <span>Quoted</span>
-            <strong class="qd-admin-count-badge">${analytics.quotedCount}</strong>
+            <span>&lt; 1 hour</span>
+            <strong class="qd-admin-count-badge">${analytics.responseBuckets.underHour}</strong>
           </div>
           <div class="qd-admin-list-item">
-            <span>Accepted</span>
-            <strong class="qd-admin-count-badge">${analytics.acceptedCount}</strong>
+            <span>1–24 hours</span>
+            <strong class="qd-admin-count-badge qd-admin-count-badge-amber">${analytics.responseBuckets.withinDay}</strong>
           </div>
           <div class="qd-admin-list-item">
-            <span>Conversion</span>
-            <strong class="qd-admin-count-badge">${analytics.quoteConversionRate}%</strong>
+            <span>24+ hours</span>
+            <strong class="qd-admin-count-badge qd-admin-count-badge-red">${analytics.responseBuckets.overDay}</strong>
           </div>
         </div>
+        <div class="qd-admin-subline">${analytics.responseBuckets.notContacted} not yet contacted</div>
       </article>
 
       <article class="qd-admin-card qd-admin-analytics-card">
-        <div class="qd-admin-card-label">Missing Info</div>
-        <h3>${escapeHtml(String(missingInfoTotal))}</h3>
-        <p>Key details still missing before the team can qualify and price submissions confidently.</p>
-        ${renderBreakdown(analytics.missingInfo.filter(([, count]) => count > 0), 'Missing-data gaps will appear here.')}
+        <div class="qd-admin-card-label">Service Demand</div>
+        <h3>${escapeHtml(analytics.serviceDemand.length ? analytics.topService : '—')}</h3>
+        <p>${escapeHtml(analytics.serviceDemand.length ? 'Most requested service this pipeline' : 'No service data yet')}</p>
+        ${analytics.serviceDemand.length ? `
+          <div class="qd-admin-list">
+            ${analytics.serviceDemand.map(([service, count]) => {
+              const percent = highestServiceCount ? Math.max(8, Math.round((count / highestServiceCount) * 100)) : 0;
+              return `
+                <div class="qd-admin-service-demand-item">
+                  <div class="qd-admin-list-item">
+                    <span>${escapeHtml(service)}</span>
+                    <strong class="qd-admin-count-badge">${count}</strong>
+                  </div>
+                  <div class="qd-admin-stage-track qd-admin-service-demand-track">
+                    <span class="qd-admin-stage-fill" style="width:${percent}%"></span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : '<div class="qd-admin-empty"><strong>No service data yet</strong>Service demand will appear once submissions include service selections.</div>'}
       </article>
       </div>
     </section>
@@ -1236,7 +1314,6 @@ const renderDashboard = () => {
           <div>
             <div class="qd-eyebrow qd-admin-kicker">Submission Pipeline</div>
             <h2>Pipeline monitor</h2>
-            <p>Search, filter, and open submissions to manage status, priority, notes, and client follow-up.</p>
           </div>
         </div>
 
@@ -1565,11 +1642,12 @@ const renderDetailItem = (label, value, options = {}) => {
   const formatted = formatValue(value, options);
   const isArabic = options.isArabic || false;
   const multiline = options.multiline || false;
+  const isEmpty = String(formatted).trim().toLowerCase() === 'not provided';
 
   return `
     <div class="qd-admin-detail-item ${isArabic ? 'is-rtl' : ''}">
       <strong>${escapeHtml(label)}</strong>
-      <div class="qd-admin-detail-value ${multiline ? 'is-multiline' : ''}">${escapeHtml(formatted)}</div>
+      <div class="qd-admin-detail-value ${multiline ? 'is-multiline' : ''} ${isEmpty ? 'is-empty' : ''}">${escapeHtml(formatted)}</div>
     </div>
   `;
 };
@@ -1739,71 +1817,54 @@ const renderDrawer = () => {
       <aside class="qd-admin-drawer" aria-label="Submission detail modal" role="dialog" aria-modal="true">
         <button class="qd-admin-drawer-close qd-admin-drawer-close-floating" type="button" data-action="close-drawer" aria-label="Close">X</button>
 
-      <section class="qd-admin-client-profile">
-        <div class="qd-admin-client-profile-main">
-          <div class="qd-eyebrow qd-admin-kicker">Client Snapshot</div>
-          <div class="qd-chip-row">
+        <section class="qd-admin-drawer-hero">
+          <div class="qd-admin-drawer-hero-copy">
+            <div class="qd-eyebrow qd-admin-kicker">Client Snapshot</div>
+            <h2 class="qd-admin-client-name">${escapeHtml(formatValue(businessName))}</h2>
+            <div class="qd-admin-client-meta qd-admin-client-meta-inline">
+              <span>${escapeHtml(formatValue(businessEmail))}</span>
+              <span class="qd-admin-client-meta-separator">•</span>
+              <span>${escapeHtml(formatValue(businessPhone))}</span>
+            </div>
+            ${state.copyFeedback ? `<div class="qd-admin-copy-feedback">${escapeHtml(state.copyFeedback)}</div>` : ''}
+          </div>
+          <div class="qd-chip-row qd-admin-drawer-status-row">
             <span class="qd-status-pill" data-tone="${escapeHtml(statusTone(submission.status))}">${escapeHtml(submission.status)}</span>
             <span class="qd-priority-pill" data-tone="${escapeHtml(priorityTone(submission.priority))}">${escapeHtml(submission.priority)}</span>
             <span class="qd-language-badge" data-language="${escapeHtml(language)}">${escapeHtml(formatLanguage(language))}</span>
           </div>
-          <h2 class="qd-admin-client-name">${escapeHtml(formatValue(businessName))}</h2>
-          <div class="qd-admin-client-meta">
-            <span>${escapeHtml(formatValue(businessEmail))}</span>
-            <span>${escapeHtml(formatValue(businessPhone))}</span>
-          </div>
-          ${state.copyFeedback ? `<div class="qd-admin-copy-feedback">${escapeHtml(state.copyFeedback)}</div>` : ''}
-        </div>
-        <div class="qd-admin-action-panel">
-          <div class="qd-admin-action-panel-head">
-            <span class="qd-admin-section-title">Client Actions</span>
-            <p>Reach out, open the quote, or update this submission without hunting through the drawer.</p>
-          </div>
-          <div class="qd-admin-actions qd-admin-client-actions qd-admin-client-actions-top">
-            ${whatsappLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-whatsapp" href="${escapeHtml(whatsappLink)}" target="_blank" rel="noreferrer noopener">WhatsApp</a>` : ''}
-            ${callLink
-              ? `<a class="qd-btn qd-btn-sm qd-admin-action-call" href="${escapeHtml(callLink)}">Call</a>`
-              : '<button class="qd-btn qd-btn-sm qd-admin-action-call is-disabled" type="button" disabled aria-disabled="true">Call</button>'}
-            ${mailtoLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-secondary" href="${escapeHtml(mailtoLink)}">Email</a>` : ''}
-            ${renderQuoteButton(submission)}
-          </div>
-          <div class="qd-admin-actions qd-admin-client-actions qd-admin-client-actions-bottom">
-            <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="${draft.editMode ? 'cancel-edit-submission' : 'edit-submission'}">${draft.editMode ? 'Cancel Edit' : 'Edit Submission'}</button>
-            <button class="qd-btn qd-btn-sm qd-admin-action-primary" type="button" data-action="copy-summary">Copy Summary</button>
-            <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="archive-submission">Archive</button>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <div class="qd-admin-quick-contact">
-        <div class="qd-admin-contact-card">
-          <strong>Email</strong>
-          <span>${escapeHtml(formatValue(businessEmail))}</span>
-        </div>
-        <div class="qd-admin-contact-card">
-          <strong>Phone</strong>
-          <span>${escapeHtml(formatValue(businessPhone))}</span>
-        </div>
-      </div>
+        <section class="qd-admin-drawer-action-strip">
+          ${whatsappLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-whatsapp" href="${escapeHtml(whatsappLink)}" target="_blank" rel="noreferrer noopener">WhatsApp</a>` : ''}
+          ${callLink
+            ? `<a class="qd-btn qd-btn-sm qd-admin-action-call" href="${escapeHtml(callLink)}">Call</a>`
+            : '<button class="qd-btn qd-btn-sm qd-admin-action-call is-disabled" type="button" disabled aria-disabled="true">Call</button>'}
+          ${mailtoLink ? `<a class="qd-btn qd-btn-sm qd-admin-action-secondary" href="${escapeHtml(mailtoLink)}">Email</a>` : ''}
+          ${renderQuoteButton(submission)}
+          <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="${draft.editMode ? 'cancel-edit-submission' : 'edit-submission'}">${draft.editMode ? 'Cancel Edit' : 'Edit Submission'}</button>
+          <button class="qd-btn qd-btn-sm qd-admin-action-secondary qd-admin-action-accent-outline" type="button" data-action="copy-summary">Copy Summary</button>
+          <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="archive-submission">Archive</button>
+        </section>
 
-      <div class="qd-admin-meta-grid">
-        <div class="qd-admin-detail-item">
-          <strong>Created</strong>
-          <div class="qd-admin-detail-value">${escapeHtml(formatDate(submission.createdAt || submission.submittedAt))}</div>
-        </div>
-        <div class="qd-admin-detail-item">
-          <strong>Submitted</strong>
-          <div class="qd-admin-detail-value">${escapeHtml(formatDate(submission.submittedAt || submission.createdAt))}</div>
-        </div>
-        <div class="qd-admin-detail-item">
-          <strong>Last Updated</strong>
-          <div class="qd-admin-detail-value">${escapeHtml(formatDate(submission.lastUpdatedAt || submission.createdAt || submission.submittedAt))}</div>
-        </div>
-      </div>
+        <section class="qd-admin-meta-grid qd-admin-timeline-strip">
+          <div class="qd-admin-detail-item qd-admin-timeline-card">
+            <strong>Created</strong>
+            <div class="qd-admin-detail-value">${escapeHtml(formatDate(submission.createdAt || submission.submittedAt))}</div>
+          </div>
+          <div class="qd-admin-detail-item qd-admin-timeline-card">
+            <strong>Submitted</strong>
+            <div class="qd-admin-detail-value">${escapeHtml(formatDate(submission.submittedAt || submission.createdAt))}</div>
+          </div>
+          <div class="qd-admin-detail-item qd-admin-timeline-card">
+            <strong>Last Updated</strong>
+            <div class="qd-admin-detail-value">${escapeHtml(formatDate(submission.lastUpdatedAt || submission.createdAt || submission.submittedAt))}</div>
+          </div>
+        </section>
 
       ${state.saveError ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.saveError)}</div>` : ''}
 
-      <section class="qd-admin-drawer-group qd-admin-drawer-admin">
+      <section class="qd-admin-drawer-group qd-admin-drawer-admin qd-admin-drawer-admin-controls">
         <div class="qd-admin-drawer-group-head">
           <h3>Admin Controls</h3>
         </div>
@@ -2555,6 +2616,13 @@ const handleDocumentClick = async (event) => {
 
   if (action === 'budget-projects-next') {
     state.budgetProjectsPage += 1;
+    render();
+    return;
+  }
+
+  if (action === 'toggle-budget-sort') {
+    state.budgetSortDirection = state.budgetSortDirection === 'asc' ? 'desc' : 'asc';
+    state.budgetProjectsPage = 0;
     render();
     return;
   }
