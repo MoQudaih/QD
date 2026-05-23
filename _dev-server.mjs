@@ -1,6 +1,6 @@
 // Local dev server for QD — mounts api/*.js on plain Node http (no vercel login).
 // Generic: any file at /api/<name>.js is auto-mounted at /api/<name>.
-// Also rewrites /q/* → /q/index.html to match the Vercel rewrite.
+// Also rewrites /q/* and /card/* to their SPA entry files to match Vercel rewrites.
 // Dynamic import with cache-bust lets us edit handlers without restarting.
 
 import dotenv from 'dotenv';
@@ -86,10 +86,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // /q/* rewrite (matches vercel.json)
+  // /q/* and /card/* rewrites (match vercel.json)
   let urlPath = pathname;
   if (urlPath.startsWith('/q/') && urlPath !== '/q/index.html' && urlPath !== '/q/quote.css' && urlPath !== '/q/quote.js') {
     urlPath = '/q/index.html';
+  }
+  if (urlPath.startsWith('/card/') && urlPath !== '/card/index.html' && urlPath !== '/card/card.css' && urlPath !== '/card/card.js') {
+    urlPath = '/card/index.html';
   }
   if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
 
@@ -118,5 +121,6 @@ server.listen(PORT, () => {
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → /api/* auto-mounts handlers from api/<name>.js`);
   console.log(`  → /q/* rewrites to /q/index.html (matches vercel.json)`);
+  console.log(`  → /card/* rewrites to /card/index.html (matches vercel.json)`);
   console.log('═══════════════════════════════════════════════════════════');
 });

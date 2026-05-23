@@ -24,7 +24,7 @@ service cloud.firestore {
 }
 */
 
-import { auth, db } from './firebase.js';
+import { auth, db, storage } from './firebase.js';
 import {
   browserLocalPersistence,
   onAuthStateChanged,
@@ -33,14 +33,25 @@ import {
   signOut
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
+  addDoc,
   collection,
+  deleteDoc,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  updateDoc
+  updateDoc,
+  where
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  deleteObject,
+  getDownloadURL,
+  ref as storageRef,
+  uploadBytes
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { CATALOG, catalogToLineItem } from '/app/lib/quote-catalog.js';
 import { computeTotals, formatAED } from '/app/lib/quote-totals.js';
 
@@ -48,19 +59,28 @@ const root = document.getElementById('qd-admin-root');
 const allowedAdminEmails = null;
 const statusOptions = ['New', 'Reviewed', 'Contacted', 'Quoted', 'Accepted', 'Under Construction', 'Completed', 'Rejected', 'Archived'];
 const priorityOptions = ['Low', 'Normal', 'High', 'VIP'];
+const CARD_SITE_URL = 'https://qdsystems.ae';
+const CARD_DEFAULT_WEBSITE = 'https://qdsystems.ae';
+const CARD_DEFAULT_CTA_LABEL = 'Start a Build';
+const CARD_DEFAULT_CTA_URL = 'https://qdsystems.ae/contact.html';
+const cardIconOptions = ['website', 'email', 'phone', 'whatsapp', 'instagram', 'linkedin', 'link'];
 
 const state = {
   authLoading: true,
   dataLoading: false,
+  cardsLoading: false,
   isLoggingIn: false,
   isSaving: false,
   user: null,
   loginError: '',
   dataError: '',
+  cardsError: '',
   saveError: '',
   copyFeedback: '',
   adminToast: '',
+  activeTab: 'dashboard',
   submissions: [],
+  cards: [],
   filters: {
     search: '',
     status: 'All',
@@ -72,11 +92,23 @@ const state = {
   drawerDraft: null,
   quotesBySubmissionId: {},
   quoteDrawer: { open: false, quote: null, dirty: false },
-  quoteToast: ''
+  quoteToast: '',
+  cardEditor: {
+    open: false,
+    mode: 'create',
+    id: null,
+    draft: null,
+    slugState: { status: 'idle', message: '' },
+    slugTouched: false,
+    isSaving: false,
+    error: '',
+    pendingAvatarFile: null
+  }
 };
 
 let unsubscribeSnapshot = null;
 let unsubscribeQuotesSnapshot = null;
+let unsubscribeCardsSnapshot = null;
 let copyFeedbackTimeout = null;
 let adminToastTimeout = null;
 
@@ -245,6 +277,105 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+const slugifyCardValue = (value) => String(value ?? '')
+  .toLowerCase()
+  .trim()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .replace(/-{2,}/g, '-')
+  .slice(0, 48);
+
+const sanitizePhoneValue = (value) => String(value ?? '').replace(/[^\d+]/g, '');
+
+const normalizeWhatsappNumber = (value) => String(value ?? '').replace(/[^\d]/g, '');
+
+const getCardPublicUrl = (slug) => `${CARD_SITE_URL}/card/${slug}`;
+
+const getCardInitials = (value) => {
+  const parts = String(value ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'QD';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('');
+};
+
+const shortenCardUrl = (value) => {
+  try {
+    const url = new URL(String(value ?? ''));
+    return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`.replace(/\/$/, '');
+  } catch {
+    return String(value ?? '');
+  }
+};
+
+const cardIconLabel = (value) => {
+  if (!value) return 'Link';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const createEmptyCardDraft = () => ({
+  name: '',
+  role: '',
+  slug: '',
+  phone: '',
+  email: '',
+  website: CARD_DEFAULT_WEBSITE,
+  avatar: '',
+  avatarStoragePath: '',
+  links: [],
+  ctaLabel: CARD_DEFAULT_CTA_LABEL,
+  ctaUrl: CARD_DEFAULT_CTA_URL,
+  active: true,
+  views: 0
+});
+
+const hydrateCard = (snapshot) => ({
+  id: snapshot.id,
+  ...snapshot.data()
+});
+
+const buildCardLinkRows = (links = []) => {
+  if (!links.length) {
+    return `
+      <div class="qd-admin-card-link-empty">
+        <p>Extra links are optional. Add Instagram, LinkedIn, portfolio, or any custom destination.</p>
+      </div>
+    `;
+  }
+
+  return links.map((link, index) => `
+    <div class="qd-admin-card-link-row" data-card-link-row="${index}">
+      <input class="qd-admin-input" type="text" data-card-link-field="label" data-card-link-index="${index}" value="${escapeHtml(link.label || '')}" placeholder="Label">
+      <input class="qd-admin-input" type="url" data-card-link-field="url" data-card-link-index="${index}" value="${escapeHtml(link.url || '')}" placeholder="https://...">
+      <select class="qd-admin-select" data-card-link-field="icon" data-card-link-index="${index}">
+        ${cardIconOptions.map((icon) => `
+          <option value="${escapeHtml(icon)}" ${(link.icon || 'link') === icon ? 'selected' : ''}>${escapeHtml(cardIconLabel(icon))}</option>
+        `).join('')}
+      </select>
+      <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="remove-card-link" data-index="${index}">Remove</button>
+    </div>
+  `).join('');
+};
+
+const getCardStatusBadge = (card) => `
+  <span class="qd-admin-card-status ${card.active === false ? 'is-inactive' : 'is-active'}">
+    ${card.active === false ? 'Inactive' : 'Active'}
+  </span>
+`;
+
+const getCardEditorStateClass = () => {
+  const status = state.cardEditor?.slugState?.status;
+  if (status === 'valid') return 'is-valid';
+  if (status === 'invalid') return 'is-invalid';
+  if (status === 'checking') return 'is-checking';
+  return '';
+};
+
+const getCardEditorDraftFromState = () => ({
+  ...createEmptyCardDraft(),
+  ...(state.cardEditor?.draft || {})
+});
+
+const buildCardEditorPreviewUrl = (slug) => getCardPublicUrl(slugifyCardValue(slug) || 'your-slug');
 
 const formatLabel = (value) => {
   if (value === null || value === undefined || value === '') return 'Not Provided';
@@ -1194,6 +1325,241 @@ const renderDashboard = () => {
   `;
 };
 
+const renderAdminTabs = () => `
+  <nav class="qd-admin-tabs" aria-label="Admin sections">
+    <button class="qd-admin-tab ${state.activeTab === 'dashboard' ? 'is-active' : ''}" type="button" data-action="set-admin-tab" data-tab="dashboard">Pipeline</button>
+    <button class="qd-admin-tab ${state.activeTab === 'cards' ? 'is-active' : ''}" type="button" data-action="set-admin-tab" data-tab="cards">Smart Cards</button>
+  </nav>
+`;
+
+const renderCardsRows = (items) => {
+  if (state.cardsLoading && !items.length) {
+    return `
+      <tr>
+        <td colspan="6">
+          <div class="qd-admin-empty-state">
+            <strong>Loading smart cards</strong>
+            <p>Opening the realtime Firestore listener for the cards collection.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  if (!items.length) {
+    return `
+      <tr>
+        <td colspan="6">
+          <div class="qd-admin-empty-state">
+            <strong>No smart cards yet</strong>
+            <p>Create the first NFC and QR-ready profile for the team.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  return items.map((card) => `
+    <tr>
+      <td>
+        <div class="qd-admin-card-person">
+          <div class="qd-admin-card-avatar">${escapeHtml(getCardInitials(card.name))}</div>
+          <div>
+            <strong>${escapeHtml(card.name || 'Untitled Card')}</strong>
+            <span>${escapeHtml(card.role || 'No role set')}</span>
+          </div>
+        </div>
+      </td>
+      <td>
+        <div class="qd-admin-card-slug-wrap">
+          <span>${escapeHtml(card.slug || '-')}</span>
+          <small>${escapeHtml(getCardPublicUrl(card.slug || ''))}</small>
+        </div>
+      </td>
+      <td>${getCardStatusBadge(card)}</td>
+      <td>${escapeHtml(String(card.views ?? 0))}</td>
+      <td>${escapeHtml(formatDate(card.updatedAt || card.createdAt))}</td>
+      <td>
+        <div class="qd-admin-row-actions">
+          <button class="qd-admin-row-button" type="button" data-action="edit-card" data-id="${escapeHtml(card.id)}">Edit</button>
+          <button class="qd-admin-row-button" type="button" data-action="download-card-qr" data-id="${escapeHtml(card.id)}">Download QR</button>
+          <button class="qd-admin-row-button" type="button" data-action="copy-card-link" data-id="${escapeHtml(card.id)}">Copy Link</button>
+          <button class="qd-admin-row-button" type="button" data-action="toggle-card-active" data-id="${escapeHtml(card.id)}">${card.active === false ? 'Activate' : 'Deactivate'}</button>
+          <button class="qd-admin-row-button is-danger" type="button" data-action="delete-card" data-id="${escapeHtml(card.id)}">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+};
+
+const renderCardsMobile = (items) => {
+  if (!items.length) return '';
+
+  return items.map((card) => `
+    <article class="qd-admin-mobile-card qd-admin-card-mobile-card">
+      <div class="qd-admin-card-person">
+        <div class="qd-admin-card-avatar">${escapeHtml(getCardInitials(card.name))}</div>
+        <div>
+          <strong>${escapeHtml(card.name || 'Untitled Card')}</strong>
+          <span>${escapeHtml(card.role || 'No role set')}</span>
+        </div>
+      </div>
+      <div class="qd-admin-mobile-card-grid">
+        <div><strong>Slug</strong><span>${escapeHtml(card.slug || '-')}</span></div>
+        <div><strong>Status</strong><span>${card.active === false ? 'Inactive' : 'Active'}</span></div>
+        <div><strong>Views</strong><span>${escapeHtml(String(card.views ?? 0))}</span></div>
+        <div><strong>Updated</strong><span>${escapeHtml(formatDate(card.updatedAt || card.createdAt))}</span></div>
+      </div>
+      <div class="qd-admin-card-mobile-actions">
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="edit-card" data-id="${escapeHtml(card.id)}">Edit</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="download-card-qr" data-id="${escapeHtml(card.id)}">QR</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="copy-card-link" data-id="${escapeHtml(card.id)}">Copy</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="toggle-card-active" data-id="${escapeHtml(card.id)}">${card.active === false ? 'Activate' : 'Pause'}</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="delete-card" data-id="${escapeHtml(card.id)}">Delete</button>
+      </div>
+    </article>
+  `).join('');
+};
+
+const renderCardEditor = () => {
+  if (!state.cardEditor.open) return '';
+
+  const draft = getCardEditorDraftFromState();
+  const previewUrl = buildCardEditorPreviewUrl(draft.slug);
+  const slugState = state.cardEditor.slugState || { status: 'idle', message: '' };
+
+  return `
+    <div class="qd-admin-modal-overlay">
+      <button class="qd-admin-modal-backdrop" type="button" data-action="close-card-editor" aria-label="Close smart card editor"></button>
+      <aside class="qd-admin-drawer qd-admin-card-editor" role="dialog" aria-modal="true" aria-label="Smart card editor">
+        <button class="qd-admin-drawer-close qd-admin-drawer-close-floating" type="button" data-action="close-card-editor" aria-label="Close">X</button>
+
+        <section class="qd-admin-card-editor-head">
+          <div>
+            <div class="qd-eyebrow qd-admin-kicker">Smart Card</div>
+            <h2>${state.cardEditor.mode === 'edit' ? 'Edit smart card' : 'Create smart card'}</h2>
+            <p>Build a premium QR and NFC destination without touching code.</p>
+          </div>
+          <div class="qd-admin-card-editor-preview">
+            <span>Preview URL</span>
+            <code id="card-preview-url">${escapeHtml(previewUrl)}</code>
+            <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="copy-card-preview">Copy</button>
+          </div>
+        </section>
+
+        ${state.cardEditor.error ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.cardEditor.error)}</div>` : ''}
+
+        <form class="qd-admin-card-form" id="card-editor-form">
+          <div class="qd-admin-admin-grid qd-admin-card-grid-fields">
+            <div class="qd-admin-field">
+              <label for="card-name">Full Name</label>
+              <input id="card-name" class="qd-admin-input" name="name" type="text" value="${escapeHtml(draft.name || '')}" placeholder="Ahmed Al Qassimi" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-role">Role / Title</label>
+              <input id="card-role" class="qd-admin-input" name="role" type="text" value="${escapeHtml(draft.role || '')}" placeholder="Founder & CEO" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-slug">Slug</label>
+              <input id="card-slug" class="qd-admin-input ${getCardEditorStateClass()}" name="slug" type="text" value="${escapeHtml(draft.slug || '')}" placeholder="ahmed" required>
+              <div class="qd-admin-field-hint ${getCardEditorStateClass()}" id="card-slug-hint">${escapeHtml(slugState.message || 'Use lowercase letters, numbers, and hyphens only.')}</div>
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-phone">Phone</label>
+              <input id="card-phone" class="qd-admin-input" name="phone" type="text" value="${escapeHtml(draft.phone || '')}" placeholder="+971501234567" inputmode="tel" required>
+              <div class="qd-admin-field-hint">Numbers only is best. WhatsApp will strip spaces and symbols automatically.</div>
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-email">Email</label>
+              <input id="card-email" class="qd-admin-input" name="email" type="email" value="${escapeHtml(draft.email || '')}" placeholder="ahmed@qdsystems.ae" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-website">Website URL</label>
+              <input id="card-website" class="qd-admin-input" name="website" type="url" value="${escapeHtml(draft.website || CARD_DEFAULT_WEBSITE)}" placeholder="https://qdsystems.ae">
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-cta-label">CTA Label</label>
+              <input id="card-cta-label" class="qd-admin-input" name="ctaLabel" type="text" value="${escapeHtml(draft.ctaLabel || CARD_DEFAULT_CTA_LABEL)}" placeholder="Start a Build">
+            </div>
+            <div class="qd-admin-field">
+              <label for="card-cta-url">CTA URL</label>
+              <input id="card-cta-url" class="qd-admin-input" name="ctaUrl" type="url" value="${escapeHtml(draft.ctaUrl || CARD_DEFAULT_CTA_URL)}" placeholder="https://qdsystems.ae/contact.html">
+            </div>
+            <div class="qd-admin-field qd-admin-card-avatar-field">
+              <label for="card-avatar">Avatar Photo</label>
+              <input id="card-avatar" class="qd-admin-input qd-admin-file-input" name="avatarFile" type="file" accept="image/*">
+              <div class="qd-admin-field-hint">${escapeHtml(state.cardEditor.pendingAvatarFile?.name || draft.avatar || 'Uploads to Firebase Storage at cards/[slug]/avatar.jpg')}</div>
+            </div>
+            <label class="qd-admin-toggle">
+              <input id="card-active" name="active" type="checkbox" ${draft.active === false ? '' : 'checked'}>
+              <span>Card is active</span>
+            </label>
+          </div>
+
+          <section class="qd-admin-drawer-group qd-admin-drawer-admin">
+            <div class="qd-admin-drawer-group-head">
+              <h3>Extra Links</h3>
+            </div>
+            <div class="qd-admin-card-links-editor" id="card-links-editor">
+              ${buildCardLinkRows(draft.links || [])}
+            </div>
+            <div class="qd-admin-card-links-actions">
+              <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="add-card-link">Add Link</button>
+            </div>
+          </section>
+
+          <div class="qd-admin-save-row">
+            <span class="qd-admin-save-help">Slug stays unique, QR downloads target the production card URL, and views update through the public page.</span>
+            <button class="qd-btn qd-btn-md qd-admin-action-primary" type="submit" data-action="submit-card-editor" ${state.cardEditor.isSaving ? 'disabled' : ''}>
+              ${state.cardEditor.isSaving ? 'Saving...' : state.cardEditor.mode === 'edit' ? 'Save card' : 'Create card'}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  `;
+};
+
+const renderCardsManager = () => `
+  <section class="qd-admin-dashboard qd-admin-cards-dashboard">
+    ${state.cardsError ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.cardsError)}</div>` : ''}
+
+    <article class="qd-admin-card qd-admin-table-card">
+      <div class="qd-admin-section-head">
+        <div>
+          <div class="qd-eyebrow qd-admin-kicker">Smart Cards</div>
+          <h2>QR and NFC profiles</h2>
+          <p>Create slug-driven digital business cards, download print-ready QR codes, and track live views from one place.</p>
+        </div>
+        <div class="qd-admin-cards-toolbar">
+          <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="seed-qd-card">Seed QD Test Card</button>
+          <button class="qd-btn qd-btn-sm qd-admin-action-primary" type="button" data-action="open-card-create">Create card</button>
+        </div>
+      </div>
+
+      <div class="qd-admin-table-wrap">
+        <table class="qd-admin-table">
+          <thead>
+            <tr>
+              <th>Profile</th>
+              <th>Slug</th>
+              <th>Status</th>
+              <th>Views</th>
+              <th>Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${renderCardsRows(state.cards)}</tbody>
+        </table>
+      </div>
+
+      <div class="qd-admin-mobile-list">
+        ${renderCardsMobile(state.cards)}
+      </div>
+    </article>
+  </section>
+`;
+
 const renderDetailItem = (label, value, options = {}) => {
   const formatted = formatValue(value, options);
   const isArabic = options.isArabic || false;
@@ -1510,10 +1876,12 @@ const renderAppShell = (content) => {
           </div>
         </header>
 
+        ${state.user ? renderAdminTabs() : ''}
         ${content}
       </div>
       ${state.adminToast ? `<div class="qd-admin-toast" role="status" aria-live="polite">${escapeHtml(state.adminToast)}</div>` : ''}
       ${renderDrawer()}
+      ${renderCardEditor()}
       ${renderQuoteDrawer()}
     </div>
   `;
@@ -1569,7 +1937,7 @@ const renderAccessDenied = () => renderAppShell(`
 `);
 
 const render = () => {
-  document.body.classList.toggle('qd-modal-open', Boolean(state.selectedId));
+  document.body.classList.toggle('qd-modal-open', Boolean(state.selectedId || state.cardEditor.open || state.quoteDrawer.open));
 
   if (state.authLoading) {
     root.innerHTML = renderLoading('Authenticating', 'Checking your Firebase session and restoring persistence.');
@@ -1592,7 +1960,7 @@ const render = () => {
     return;
   }
 
-  root.innerHTML = renderAppShell(renderDashboard());
+  root.innerHTML = renderAppShell(state.activeTab === 'cards' ? renderCardsManager() : renderDashboard());
 };
 
 const openSubmission = (id) => {
@@ -1741,6 +2109,363 @@ const subscribeToSubmissions = () => {
   startListener(orderedQuery);
 };
 
+const subscribeToCards = () => {
+  if (unsubscribeCardsSnapshot) {
+    unsubscribeCardsSnapshot();
+    unsubscribeCardsSnapshot = null;
+  }
+
+  state.cardsLoading = true;
+  state.cardsError = '';
+  render();
+
+  const cardsRef = collection(db, 'cards');
+  const orderedQuery = query(cardsRef, orderBy('createdAt', 'desc'));
+
+  const startListener = (source) => {
+    unsubscribeCardsSnapshot = onSnapshot(
+      source,
+      (snapshot) => {
+        state.cards = snapshot.docs.map(hydrateCard);
+        state.cardsLoading = false;
+        render();
+      },
+      (error) => {
+        if (source === orderedQuery) {
+          startListener(cardsRef);
+          return;
+        }
+
+        state.cardsLoading = false;
+        state.cardsError = error?.message || 'Unable to read Firestore cards.';
+        render();
+      }
+    );
+  };
+
+  startListener(orderedQuery);
+};
+
+const getCardById = (id) => state.cards.find((card) => card.id === id) || null;
+
+const openCardEditor = (mode, card = null) => {
+  const draft = card
+    ? {
+        ...createEmptyCardDraft(),
+        ...card,
+        links: Array.isArray(card.links) ? card.links.map((link) => ({ ...link })) : []
+      }
+    : createEmptyCardDraft();
+
+  state.cardEditor = {
+    open: true,
+    mode,
+    id: card?.id || null,
+    draft,
+    slugState: { status: 'idle', message: 'Use lowercase letters, numbers, and hyphens only.' },
+    slugTouched: Boolean(card?.slug),
+    isSaving: false,
+    error: '',
+    pendingAvatarFile: null
+  };
+  render();
+};
+
+const closeCardEditor = () => {
+  state.cardEditor = {
+    open: false,
+    mode: 'create',
+    id: null,
+    draft: null,
+    slugState: { status: 'idle', message: '' },
+    slugTouched: false,
+    isSaving: false,
+    error: '',
+    pendingAvatarFile: null
+  };
+  render();
+};
+
+const captureCardEditorDraftFromDom = () => {
+  const form = document.getElementById('card-editor-form');
+  const current = getCardEditorDraftFromState();
+  if (!form) return current;
+
+  const links = Array.from(form.querySelectorAll('[data-card-link-row]')).map((row) => {
+    const index = row.getAttribute('data-card-link-row');
+    const label = form.querySelector(`[data-card-link-field="label"][data-card-link-index="${index}"]`)?.value?.trim() || '';
+    const url = form.querySelector(`[data-card-link-field="url"][data-card-link-index="${index}"]`)?.value?.trim() || '';
+    const icon = form.querySelector(`[data-card-link-field="icon"][data-card-link-index="${index}"]`)?.value || 'link';
+    return { label, url, icon };
+  });
+
+  return {
+    ...current,
+    name: form.elements.name?.value?.trim() || '',
+    role: form.elements.role?.value?.trim() || '',
+    slug: slugifyCardValue(form.elements.slug?.value || ''),
+    phone: sanitizePhoneValue(form.elements.phone?.value || ''),
+    email: form.elements.email?.value?.trim() || '',
+    website: form.elements.website?.value?.trim() || CARD_DEFAULT_WEBSITE,
+    ctaLabel: form.elements.ctaLabel?.value?.trim() || CARD_DEFAULT_CTA_LABEL,
+    ctaUrl: form.elements.ctaUrl?.value?.trim() || CARD_DEFAULT_CTA_URL,
+    active: Boolean(form.elements.active?.checked),
+    links: links.filter((link) => link.label || link.url)
+  };
+};
+
+const writeCardPreviewUrl = (slug) => {
+  const preview = document.getElementById('card-preview-url');
+  if (preview) preview.textContent = buildCardEditorPreviewUrl(slug);
+};
+
+const writeCardSlugHint = (status, message) => {
+  const hint = document.getElementById('card-slug-hint');
+  const slugInput = document.getElementById('card-slug');
+  if (!hint || !slugInput) return;
+
+  hint.textContent = message;
+  hint.classList.remove('is-valid', 'is-invalid', 'is-checking');
+  slugInput.classList.remove('is-valid', 'is-invalid', 'is-checking');
+
+  if (status === 'valid' || status === 'invalid' || status === 'checking') {
+    hint.classList.add(`is-${status}`);
+    slugInput.classList.add(`is-${status}`);
+  }
+};
+
+const setCardEditorSlugState = (status, message) => {
+  state.cardEditor.slugState = { status, message };
+  writeCardSlugHint(status, message);
+};
+
+const validateCardSlug = async (slug, { silent = false } = {}) => {
+  const normalized = slugifyCardValue(slug);
+  if (!normalized) {
+    if (!silent) setCardEditorSlugState('invalid', 'Slug is required.');
+    return false;
+  }
+
+  if (normalized !== slug) {
+    if (!silent) setCardEditorSlugState('invalid', 'Use lowercase letters, numbers, and hyphens only.');
+    return false;
+  }
+
+  if (!silent) setCardEditorSlugState('checking', 'Checking slug availability...');
+
+  const cardsRef = collection(db, 'cards');
+  const slugQuery = query(cardsRef, where('slug', '==', normalized), limit(2));
+  const snapshot = await getDocs(slugQuery);
+  const conflict = snapshot.docs.find((item) => item.id !== state.cardEditor.id);
+
+  if (conflict) {
+    if (!silent) setCardEditorSlugState('invalid', 'That slug is already in use.');
+    return false;
+  }
+
+  if (!silent) setCardEditorSlugState('valid', 'Slug is available.');
+  return true;
+};
+
+const uploadCardAvatarIfNeeded = async (draft) => {
+  const file = state.cardEditor.pendingAvatarFile;
+  if (!file) {
+    return {
+      avatar: draft.avatar || '',
+      avatarStoragePath: draft.avatarStoragePath || ''
+    };
+  }
+
+  const safeSlug = slugifyCardValue(draft.slug);
+  const path = `cards/${safeSlug}/avatar.jpg`;
+  const fileRef = storageRef(storage, path);
+  await uploadBytes(fileRef, file, { contentType: file.type || 'image/jpeg' });
+  const url = await getDownloadURL(fileRef);
+  return {
+    avatar: url,
+    avatarStoragePath: path
+  };
+};
+
+const deleteCardAvatarIfNeeded = async (card) => {
+  if (!card?.avatarStoragePath) return;
+  try {
+    await deleteObject(storageRef(storage, card.avatarStoragePath));
+  } catch (error) {
+    console.warn('[cards] avatar cleanup skipped:', error?.message || error);
+  }
+};
+
+const ensureCardEditorData = () => {
+  const draft = captureCardEditorDraftFromDom();
+  state.cardEditor.draft = draft;
+  return draft;
+};
+
+const saveCardEditor = async () => {
+  const draft = ensureCardEditorData();
+
+  if (!draft.name || !draft.role || !draft.slug || !draft.phone || !draft.email) {
+    state.cardEditor.error = 'Name, role, slug, phone, and email are required.';
+    render();
+    return;
+  }
+
+  const isSlugValid = await validateCardSlug(draft.slug, { silent: false });
+  if (!isSlugValid) return;
+
+  state.cardEditor.isSaving = true;
+  state.cardEditor.error = '';
+  render();
+
+  try {
+    const avatarPayload = await uploadCardAvatarIfNeeded(draft);
+    const payload = {
+      slug: draft.slug,
+      name: draft.name,
+      role: draft.role,
+      company: draft.company || 'QD SYSTEMS',
+      phone: draft.phone,
+      email: draft.email,
+      website: draft.website || CARD_DEFAULT_WEBSITE,
+      avatar: avatarPayload.avatar,
+      avatarStoragePath: avatarPayload.avatarStoragePath,
+      links: draft.links || [],
+      ctaLabel: draft.ctaLabel || CARD_DEFAULT_CTA_LABEL,
+      ctaUrl: draft.ctaUrl || CARD_DEFAULT_CTA_URL,
+      active: draft.active !== false,
+      views: Number(draft.views || 0),
+      updatedAt: serverTimestamp()
+    };
+
+    if (state.cardEditor.mode === 'edit' && state.cardEditor.id) {
+      await updateDoc(doc(db, 'cards', state.cardEditor.id), payload);
+      showAdminToast(`Saved ${draft.slug}`);
+    } else {
+      await addDoc(collection(db, 'cards'), {
+        ...payload,
+        createdAt: serverTimestamp()
+      });
+      showAdminToast(`Created ${draft.slug}`);
+    }
+
+    closeCardEditor();
+  } catch (error) {
+    state.cardEditor.isSaving = false;
+    state.cardEditor.error = error?.message || 'Could not save the smart card.';
+    render();
+  }
+};
+
+const copyCardUrl = async (card) => {
+  await navigator.clipboard.writeText(getCardPublicUrl(card.slug));
+  showAdminToast('Card link copied.');
+};
+
+const ensureQrCodeLibrary = async () => {
+  if (window.QRCode) return window.QRCode;
+
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-qr-lib="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('QR library failed to load.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    script.async = true;
+    script.dataset.qrLib = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('QR library failed to load.'));
+    document.head.appendChild(script);
+  });
+
+  return window.QRCode;
+};
+
+const downloadCardQr = async (card) => {
+  const QRCode = await ensureQrCodeLibrary();
+  const mount = document.createElement('div');
+  mount.style.position = 'fixed';
+  mount.style.left = '-9999px';
+  mount.style.top = '0';
+  document.body.appendChild(mount);
+
+  new QRCode(mount, {
+    text: getCardPublicUrl(card.slug),
+    width: 1024,
+    height: 1024,
+    colorDark: '#000000',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const canvas = mount.querySelector('canvas');
+  if (!canvas) {
+    mount.remove();
+    throw new Error('QR canvas could not be created.');
+  }
+
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = `qd-card-${card.slug}-qr.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  mount.remove();
+  showAdminToast(`Downloaded QR for ${card.slug}`);
+};
+
+const toggleCardActive = async (card) => {
+  await updateDoc(doc(db, 'cards', card.id), {
+    active: card.active === false,
+    updatedAt: serverTimestamp()
+  });
+  showAdminToast(card.active === false ? `Activated ${card.slug}` : `Deactivated ${card.slug}`);
+};
+
+const deleteCardRecord = async (card) => {
+  const confirmed = window.confirm(`Delete the smart card for ${card.name || card.slug}?`);
+  if (!confirmed) return;
+  await deleteDoc(doc(db, 'cards', card.id));
+  await deleteCardAvatarIfNeeded(card);
+  showAdminToast(`Deleted ${card.slug}`);
+};
+
+const seedQdCard = async () => {
+  const exists = state.cards.some((card) => card.slug === 'qd');
+  if (exists) {
+    showAdminToast('The qd seed card already exists.');
+    return;
+  }
+
+  await addDoc(collection(db, 'cards'), {
+    slug: 'qd',
+    name: 'QD SYSTEMS',
+    role: 'Digital Systems Agency',
+    company: 'QD SYSTEMS',
+    phone: '+971500000000',
+    email: 'hello@qdsystems.ae',
+    website: 'https://qdsystems.ae',
+    avatar: '',
+    avatarStoragePath: '',
+    links: [
+      { label: 'Instagram', url: 'https://instagram.com/qdsystems', icon: 'instagram' },
+      { label: 'WhatsApp', url: 'https://wa.me/971500000000', icon: 'whatsapp' }
+    ],
+    ctaLabel: 'Start a Build',
+    ctaUrl: 'https://qdsystems.ae/contact.html',
+    active: true,
+    views: 0,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  showAdminToast('Seed card created.');
+};
+
 const saveDrawer = async (nextValues = {}) => {
   const selected = getSelectedSubmission();
   if (!selected) return;
@@ -1801,6 +2526,12 @@ const handleDocumentClick = async (event) => {
     return;
   }
 
+  if (action === 'set-admin-tab') {
+    state.activeTab = actionTarget.dataset.tab || 'dashboard';
+    render();
+    return;
+  }
+
   if (action === 'open-submission') {
     openSubmission(actionTarget.dataset.id);
     return;
@@ -1841,6 +2572,80 @@ const handleDocumentClick = async (event) => {
 
   if (action === 'close-drawer') {
     closeDrawer();
+    return;
+  }
+
+  if (action === 'open-card-create') {
+    openCardEditor('create');
+    return;
+  }
+
+  if (action === 'close-card-editor') {
+    closeCardEditor();
+    return;
+  }
+
+  if (action === 'edit-card') {
+    const card = getCardById(actionTarget.dataset.id);
+    if (!card) return;
+    openCardEditor('edit', card);
+    return;
+  }
+
+  if (action === 'add-card-link') {
+    const draft = ensureCardEditorData();
+    draft.links = [...(draft.links || []), { label: '', url: '', icon: 'link' }];
+    state.cardEditor.draft = draft;
+    render();
+    return;
+  }
+
+  if (action === 'remove-card-link') {
+    const draft = ensureCardEditorData();
+    const index = Number(actionTarget.dataset.index);
+    draft.links = (draft.links || []).filter((_, itemIndex) => itemIndex !== index);
+    state.cardEditor.draft = draft;
+    render();
+    return;
+  }
+
+  if (action === 'copy-card-preview') {
+    const slug = slugifyCardValue(document.getElementById('card-slug')?.value || state.cardEditor.draft?.slug || '');
+    await navigator.clipboard.writeText(buildCardEditorPreviewUrl(slug));
+    showAdminToast('Preview link copied.');
+    return;
+  }
+
+  if (action === 'copy-card-link') {
+    const card = getCardById(actionTarget.dataset.id);
+    if (!card) return;
+    await copyCardUrl(card);
+    return;
+  }
+
+  if (action === 'download-card-qr') {
+    const card = getCardById(actionTarget.dataset.id);
+    if (!card) return;
+    await downloadCardQr(card);
+    return;
+  }
+
+  if (action === 'toggle-card-active') {
+    const card = getCardById(actionTarget.dataset.id);
+    if (!card) return;
+    await toggleCardActive(card);
+    return;
+  }
+
+  if (action === 'delete-card') {
+    const card = getCardById(actionTarget.dataset.id);
+    if (!card) return;
+    await deleteCardRecord(card);
+    return;
+  }
+
+  if (action === 'seed-qd-card') {
+    await seedQdCard();
     return;
   }
 
@@ -1948,6 +2753,31 @@ const handleDocumentClick = async (event) => {
 };
 
 const handleDocumentInput = (event) => {
+  if (state.cardEditor.open) {
+    if (event.target.id === 'card-name') {
+      const slugInput = document.getElementById('card-slug');
+      if (slugInput && !state.cardEditor.slugTouched) {
+        slugInput.value = slugifyCardValue(event.target.value);
+        writeCardPreviewUrl(slugInput.value);
+      }
+      return;
+    }
+
+    if (event.target.id === 'card-slug') {
+      state.cardEditor.slugTouched = true;
+      const nextSlug = slugifyCardValue(event.target.value);
+      if (nextSlug !== event.target.value) event.target.value = nextSlug;
+      writeCardPreviewUrl(nextSlug);
+      setCardEditorSlugState('idle', 'Use lowercase letters, numbers, and hyphens only.');
+      return;
+    }
+
+    if (event.target.id === 'card-phone') {
+      event.target.value = sanitizePhoneValue(event.target.value);
+      return;
+    }
+  }
+
   const filterField = event.target.dataset.field;
   if (filterField) {
     if (filterField === 'status') {
@@ -2020,6 +2850,22 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('change', (event) => {
+  if (event.target.id === 'card-avatar') {
+    state.cardEditor.pendingAvatarFile = event.target.files?.[0] || null;
+    const hint = event.target.closest('.qd-admin-field')?.querySelector('.qd-admin-field-hint');
+    if (hint) {
+      hint.textContent = state.cardEditor.pendingAvatarFile?.name || state.cardEditor.draft?.avatar || 'Uploads to Firebase Storage at cards/[slug]/avatar.jpg';
+    }
+    return;
+  }
+
+  if (event.target.id === 'card-slug') {
+    validateCardSlug(event.target.value).catch((error) => {
+      setCardEditorSlugState('invalid', error?.message || 'Slug check failed.');
+    });
+    return;
+  }
+
   if (event.target.dataset.qaction === 'add-from-catalog') {
     const key = event.target.value;
     if (!key || !state.quoteDrawer.quote) return;
@@ -2033,8 +2879,19 @@ document.addEventListener('change', (event) => {
   }
 });
 
+document.addEventListener('submit', async (event) => {
+  if (event.target.id === 'card-editor-form') {
+    event.preventDefault();
+    await saveCardEditor();
+  }
+});
+
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
+    if (state.cardEditor.open) {
+      closeCardEditor();
+      return;
+    }
     if (state.quoteDrawer.open) {
       closeQuoteDrawer();
       return;
@@ -2367,6 +3224,7 @@ onAuthStateChanged(auth, (user) => {
   if (user && isAllowedAdminUser(user)) {
     subscribeToSubmissions();
     subscribeToQuotes();
+    subscribeToCards();
   } else {
     if (unsubscribeSnapshot) {
       unsubscribeSnapshot();
@@ -2376,10 +3234,27 @@ onAuthStateChanged(auth, (user) => {
       unsubscribeQuotesSnapshot();
       unsubscribeQuotesSnapshot = null;
     }
+    if (unsubscribeCardsSnapshot) {
+      unsubscribeCardsSnapshot();
+      unsubscribeCardsSnapshot = null;
+    }
     state.submissions = [];
+    state.cards = [];
     state.quotesBySubmissionId = {};
     state.quoteDrawer = { open: false, quote: null, dirty: false };
+    state.cardEditor = {
+      open: false,
+      mode: 'create',
+      id: null,
+      draft: null,
+      slugState: { status: 'idle', message: '' },
+      slugTouched: false,
+      isSaving: false,
+      error: '',
+      pendingAvatarFile: null
+    };
     state.dataLoading = false;
+    state.cardsLoading = false;
   }
 
   render();
