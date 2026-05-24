@@ -156,7 +156,7 @@
       grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
       gap: 24px;
       align-items: end;
-      margin-bottom: 36px;
+      margin-bottom: 20px;
     }
 
     .qd-hero-copy h1 {
@@ -189,12 +189,13 @@
         0 24px 70px rgba(0, 0, 0, 0.38),
         inset 0 0 0 1px rgba(166, 240, 79, 0.08),
         0 0 40px rgba(166, 240, 79, 0.06);
+      transform: translateY(16px);
     }
 
     .qd-hero-side strong {
       display: block;
       font-family: var(--font-display);
-      font-size: 28px;
+      font-size: 24px;
       letter-spacing: -0.03em;
       color: var(--fg1);
       margin-bottom: 14px;
@@ -256,6 +257,8 @@
       position: sticky;
       top: 28px;
       padding: 22px;
+      min-width: 0;
+      overflow: clip;
     }
 
     .qd-progress-meta {
@@ -271,24 +274,37 @@
       text-transform: uppercase;
     }
 
+    .qd-progress-step-label {
+      min-width: 0;
+    }
+
+    .qd-progress-value {
+      min-width: 48px;
+      text-align: end;
+      flex: 0 0 auto;
+    }
+
     .qd-progress-track {
       position: relative;
       overflow: hidden;
       width: 100%;
       height: 8px;
       border-radius: 999px;
-      background: rgba(244, 241, 234, 0.08);
+      background: rgba(255, 255, 255, 0.08);
       margin-bottom: 26px;
     }
 
     .qd-progress-fill {
       position: absolute;
-      inset: 0 auto 0 0;
+      inset: 0;
+      width: 100%;
       height: 100%;
       border-radius: inherit;
       background: linear-gradient(90deg, rgba(166, 240, 79, 0.9), rgba(197, 248, 42, 1));
       box-shadow: 0 0 24px rgba(166, 240, 79, 0.45);
-      transition: width 380ms var(--ease-out);
+      transform: scaleX(0);
+      transform-origin: left center;
+      transition: transform 380ms var(--ease-out);
     }
 
     .qd-step-head {
@@ -1363,18 +1379,54 @@
     .qd-step-list {
       display: grid;
       gap: 10px;
+      margin-top: 0;
+    }
+
+    .qd-step-list-wrap {
+      position: relative;
       margin-top: 18px;
+      max-height: calc(100vh - 286px);
+      overflow-y: auto;
+      min-width: 0;
+      max-width: 100%;
+      padding-right: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(166, 240, 79, 0.2) transparent;
+    }
+
+    .qd-step-list-wrap::after {
+      content: '';
+      position: sticky;
+      display: block;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 28px;
+      margin-top: -28px;
+      background: linear-gradient(180deg, rgba(10, 11, 13, 0), rgba(10, 11, 13, 0.96));
+      pointer-events: none;
+    }
+
+    .qd-step-list-wrap::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .qd-step-list-wrap::-webkit-scrollbar-thumb {
+      background: rgba(166, 240, 79, 0.18);
+      border-radius: 999px;
     }
 
     .qd-step-pill {
+      position: relative;
       display: grid;
       grid-template-columns: auto 1fr auto;
       align-items: center;
       gap: 10px;
       width: 100%;
-      padding: 12px 14px;
+      padding: 12px 14px 12px 16px;
       border-radius: 16px;
       border: 1px solid rgba(244, 241, 234, 0.08);
+      border-inline-start: 2px solid transparent;
       background: rgba(255, 255, 255, 0.02);
       color: var(--fg2);
       text-align: inherit;
@@ -1389,7 +1441,8 @@
 
     .qd-step-pill.is-active {
       border-color: rgba(166, 240, 79, 0.46);
-      background: rgba(166, 240, 79, 0.06);
+      border-inline-start-color: var(--acid);
+      background: rgba(166, 240, 79, 0.07);
     }
 
     .qd-step-pill.is-complete .qd-step-index {
@@ -1420,11 +1473,17 @@
     }
 
     .qd-step-complete {
-      color: var(--acid);
+      color: var(--fg3);
       font-family: var(--font-mono);
       font-size: 10px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
+      opacity: 0.72;
+    }
+
+    .qd-step-pill.is-active .qd-step-complete {
+      color: var(--acid);
+      opacity: 0.82;
     }
 
     .qd-summary-stats {
@@ -1450,12 +1509,26 @@
       margin-bottom: 4px;
     }
 
+    .qd-stat.is-placeholder strong {
+      color: rgba(244, 241, 234, 0.88);
+    }
+
     .qd-stat span {
       color: var(--fg3);
       font-family: var(--font-mono);
       font-size: 10px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
+    }
+
+    .qd-stat.is-placeholder span {
+      opacity: 0.45;
+    }
+
+    .qd-summary-footnote {
+      margin-top: 18px;
+      margin-bottom: 0;
+      opacity: 0.78;
     }
 
     .qd-review-grid {
@@ -1667,6 +1740,10 @@
       direction: rtl;
     }
 
+    [dir="rtl"] .qd-progress-fill {
+      transform-origin: right center;
+    }
+
     [dir="rtl"] .qd-label-row {
       direction: rtl;
     }
@@ -1847,8 +1924,20 @@
         width: 100%;
       }
 
+      .qd-hero-side {
+        transform: translateY(8px);
+      }
+
       .qd-summary-card {
         position: static;
+      }
+
+      .qd-step-list-wrap {
+        max-height: none;
+      }
+
+      .qd-step-list-wrap::after {
+        display: none;
       }
     }
 
@@ -1996,6 +2085,162 @@
         justify-content: center;
       }
     }
+
+    @media (max-width: 768px) {
+      .qd-contact-shell {
+        padding-top: 12px;
+        padding-bottom: 132px;
+      }
+
+      .qd-contact-header {
+        margin-bottom: 14px;
+        padding: 10px 12px;
+      }
+
+      .qd-contact-actions {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .qd-back-link {
+        padding: 8px 10px;
+        font-size: 10.5px;
+        letter-spacing: 0.12em;
+      }
+
+      .qd-language-toggle {
+        margin-left: auto;
+      }
+
+      [dir="rtl"] .qd-language-toggle {
+        margin-left: 0;
+        margin-right: auto;
+      }
+
+      .qd-contact-hero {
+        gap: 12px;
+        margin-bottom: 16px;
+        align-items: start;
+      }
+
+      .qd-hero-copy h1 {
+        font-size: clamp(36px, 10vw, 44px);
+        margin: 8px 0 0;
+      }
+
+      .qd-hero-side {
+        transform: none;
+        padding: 16px 18px;
+        border-radius: 20px;
+      }
+
+      .qd-hero-side strong {
+        margin-bottom: 10px;
+        font-size: 22px;
+      }
+
+      .qd-hero-side p {
+        display: block;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .qd-hero-side .qd-pulse-bar {
+        display: block;
+        margin-top: 14px;
+      }
+
+      .qd-progress-meta {
+        gap: 10px;
+      }
+
+      .qd-progress-value {
+        min-width: 52px;
+      }
+
+      .qd-progress-track {
+        margin-bottom: 18px;
+      }
+
+      .qd-step-head {
+        margin-bottom: 14px;
+      }
+
+      .qd-step-head p {
+        display: none;
+      }
+
+      .qd-step-list-wrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-right: 0;
+        padding-bottom: 8px;
+        mask-image: linear-gradient(90deg, black 0%, black 88%, transparent 100%);
+        -webkit-mask-image: linear-gradient(90deg, black 0%, black 88%, transparent 100%);
+      }
+
+      .qd-step-list {
+        display: flex;
+        gap: 10px;
+        min-width: max-content;
+      }
+
+      .qd-step-pill {
+        min-width: 220px;
+        padding: 12px 14px;
+        border-inline-start-width: 1px;
+      }
+
+      .qd-step-pill.is-active {
+        border-inline-start-color: rgba(166, 240, 79, 0.46);
+        box-shadow: inset 0 -2px 0 var(--acid);
+      }
+    }
+
+    @media (min-width: 1101px) {
+      .qd-hero-side {
+        width: 320px;
+        max-width: 320px;
+      }
+    }
+
+    @media (min-width: 768px) and (max-width: 1100px) {
+      body.qd-contact-page .qd-chat-root .qd-chat-launcher {
+        bottom: 24px;
+        right: 24px;
+      }
+
+      body.qd-contact-page .qd-chat-root .qd-chat-panel {
+        bottom: 24px;
+        right: 24px;
+      }
+
+      body.qd-contact-page[dir="rtl"] .qd-chat-root .qd-chat-launcher,
+      body.qd-contact-page[dir="rtl"] .qd-chat-root .qd-chat-panel {
+        right: auto;
+        left: 24px;
+      }
+    }
+
+    @media (max-width: 767px) {
+      body.qd-contact-page .qd-chat-root .qd-chat-launcher {
+        bottom: 20px;
+        right: 16px;
+      }
+
+      body.qd-contact-page .qd-chat-root .qd-chat-panel {
+        bottom: 20px;
+        right: 16px;
+      }
+
+      body.qd-contact-page[dir="rtl"] .qd-chat-root .qd-chat-launcher,
+      body.qd-contact-page[dir="rtl"] .qd-chat-root .qd-chat-panel {
+        right: auto;
+        left: 16px;
+      }
+    }
   </style>
 </head>
 <body class="qd-contact-page">
@@ -2048,10 +2293,10 @@
         backHome: 'Back to home',
         eyebrow: '// START A BUILD · QD',
         heroTitle: 'Start a build.',
-        heroSubtitle: 'Tell us what you need. We’ll turn it into a system.',
+        heroSubtitle: '',
         microcopy: 'Answer what you can. We’ll handle the rest.',
         sideTitle: 'Project intake',
-        sideBody: 'This walkthrough turns your goals, content, business systems, and support needs into one clean project brief for the build team.',
+        sideBody: '',
         stepLabel: 'Step',
         ofLabel: 'of',
         previous: 'Previous',
@@ -2123,10 +2368,10 @@
         backHome: 'العودة للرئيسية',
         eyebrow: '// ابدأ مشروعك · QD',
         heroTitle: 'ابدأ مشروعك.',
-        heroSubtitle: 'أخبرنا بما تحتاجه، وسنحوله إلى نظام جاهز.',
+        heroSubtitle: '',
         microcopy: 'أجب على ما تستطيع، وسنتولى الباقي.',
         sideTitle: 'استقبال المشروع',
-        sideBody: 'هذا النموذج يجمع أهدافك، والمحتوى، وأنظمة العمل، واحتياجات الدعم في موجز مشروع واضح لفريق التنفيذ.',
+        sideBody: '',
         stepLabel: 'الخطوة',
         ofLabel: 'من',
         previous: 'السابق',
@@ -2719,6 +2964,9 @@
       const [submitError, setSubmitError] = useState('');
       const [showStepValidation, setShowStepValidation] = useState(false);
       const [errors, setErrors] = useState({});
+      const [hasInteracted, setHasInteracted] = useState(false);
+      const [displayProgressPercent, setDisplayProgressPercent] = useState(0);
+      const [didPlayProgressIntro, setDidPlayProgressIntro] = useState(false);
       const [activeColor, setActiveColor] = useState('#A6F04F');
       const [hexInput, setHexInput] = useState('#A6F04F');
       const [visitorActionDraft, setVisitorActionDraft] = useState('');
@@ -2756,6 +3004,10 @@
 
       const isValidHex = (value) => /^#([0-9A-F]{3}){1,2}$/i.test(value);
 
+      const markInteracted = () => {
+        setHasInteracted(true);
+      };
+
       const clampNumber = (value, min = 0, max = 999) => {
         const number = Number(value);
         if (Number.isNaN(number)) return '';
@@ -2764,6 +3016,7 @@
 
       const updateCounter = (fieldId, nextValue, min = 0, max = 999) => {
         const clamped = clampNumber(nextValue, min, max);
+        markInteracted();
         setFormData((prev) => ({ ...prev, [fieldId]: clamped }));
         setShowStepValidation(false);
       };
@@ -2778,6 +3031,7 @@
         const hex = normalizeHex(color);
         if (!isValidHex(hex)) return;
 
+        markInteracted();
         setFormData((prev) => {
           const current = Array.isArray(prev[fieldId]) ? prev[fieldId] : [];
           if (current.includes(hex)) return prev;
@@ -2790,6 +3044,7 @@
       };
 
       const removeColor = (fieldId, color) => {
+        markInteracted();
         setFormData((prev) => {
           const current = Array.isArray(prev[fieldId]) ? prev[fieldId] : [];
           return { ...prev, [fieldId]: current.filter((item) => item !== color) };
@@ -2804,6 +3059,7 @@
           const clip = await navigator.clipboard.readText();
           if (!clip?.trim()) return;
 
+          markInteracted();
           setFormData((prev) => {
             const current = prev[fieldId] || '';
             const nextValue = current.trim()
@@ -2867,12 +3123,44 @@
           .length
       ), [formData]);
 
+      const sectionsTouchedCount = useMemo(() => (
+        steps
+          .filter((step) => step.id !== 'review')
+          .filter((step) => step.fields
+            .map((fieldId) => ({ id: fieldId, ...fieldCatalog[fieldId] }))
+            .filter((field) => isVisibleField(field.id, formData))
+            .some((field) => hasFieldValue(field, formData))
+          )
+          .length
+      ), [formData]);
+
       const progressPercent = totalAnswerableFields ? (answeredFieldsCount / totalAnswerableFields) * 100 : 0;
+
+      useEffect(() => {
+        if (hasInteracted || progressPercent > 0) {
+          setDisplayProgressPercent(progressPercent);
+          return;
+        }
+
+        if (didPlayProgressIntro) {
+          setDisplayProgressPercent(5);
+          return;
+        }
+
+        setDisplayProgressPercent(0);
+        const frame = window.requestAnimationFrame(() => {
+          setDisplayProgressPercent(5);
+          setDidPlayProgressIntro(true);
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+      }, [didPlayProgressIntro, hasInteracted, progressPercent]);
 
       const updateField = (fieldId, value) => {
         const nextValue = fieldId === 'businessPhone'
           ? sanitizePhoneValue(value)
           : value;
+        markInteracted();
         setFormData((prev) => ({ ...prev, [fieldId]: nextValue }));
         setErrors((prev) => {
           if (!prev[fieldId]) return prev;
@@ -2889,6 +3177,29 @@
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         const input = el.querySelector('input, textarea, select, button') || el;
         setTimeout(() => input.focus?.({ preventScroll: true }), 350);
+      };
+
+      const scrollToStepTop = () => {
+        const header = document.querySelector('.contact-nav') || document.querySelector('.qd-contact-header') || document.querySelector('header');
+        const headerHeight = header ? header.offsetHeight : 0;
+        const stepContent =
+          document.querySelector('.step-content') ||
+          document.querySelector('.form-step.active') ||
+          document.querySelector('.qd-step-shell') ||
+          document.querySelector('main');
+
+        if (stepContent) {
+          const top = stepContent.getBoundingClientRect().top + window.scrollY - headerHeight - 16;
+          window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      };
+
+      const queueScrollToStepTop = () => {
+        window.setTimeout(() => {
+          scrollToStepTop();
+        }, 50);
       };
 
       const validateFields = (fields) => {
@@ -2977,6 +3288,7 @@
       };
 
       const toggleCheckbox = (fieldId, value) => {
+        markInteracted();
         setFormData((prev) => {
           const current = Array.isArray(prev[fieldId]) ? prev[fieldId] : [];
           const removing = current.includes(value);
@@ -3006,6 +3318,7 @@
           setCurrentStep(index);
           setShowStepValidation(false);
           setErrors({});
+          queueScrollToStepTop();
           return;
         }
         setShowStepValidation(true);
@@ -3022,6 +3335,7 @@
         setErrors({});
         setCurrentStep((step) => step + 1);
         setShowStepValidation(false);
+        queueScrollToStepTop();
       };
 
       const getOptionSelected = (field, optionValue) => {
@@ -3105,6 +3419,7 @@
       const addVisitorAction = () => {
         const nextAction = visitorActionDraft.trim();
         if (!nextAction) return;
+        markInteracted();
         setFormData((prev) => {
           const current = Array.isArray(prev.visitorActions) ? prev.visitorActions : [];
           if (current.includes(nextAction)) return prev;
@@ -3121,6 +3436,7 @@
       };
 
       const removeVisitorAction = (actionToRemove) => {
+        markInteracted();
         setFormData((prev) => ({
           ...prev,
           visitorActions: (Array.isArray(prev.visitorActions) ? prev.visitorActions : []).filter((action) => action !== actionToRemove)
@@ -3348,7 +3664,10 @@
                   <button
                     type="button"
                     className="qd-btn qd-btn-primary qd-btn-sm qd-acid-action"
-                    onClick={() => setFormData((prev) => ({ ...prev, idealCustomerProfileStarted: true }))}
+                    onClick={() => {
+                      markInteracted();
+                      setFormData((prev) => ({ ...prev, idealCustomerProfileStarted: true }));
+                    }}
                   >
                     {locale.startCustomerProfile}
                   </button>
@@ -3581,6 +3900,7 @@
                   onChange={(event) => {
                     const raw = event.target.value;
                     if (raw === '') {
+                      markInteracted();
                       setFormData((prev) => ({ ...prev, [field.id]: '' }));
                       setShowStepValidation(false);
                       return;
@@ -3921,11 +4241,10 @@
       if (submitted) {
         return (
           <div className="qd-contact-shell">
-            <header className="qd-contact-header">
+            <header className="qd-contact-header contact-nav">
               <a href="index.html" className="qd-logo-lockup">
                 <img src="assets/qd-logo.jpeg" alt="QD Systems" />
                 <div>
-                  <div className="qd-eyebrow">{locale.eyebrow}</div>
                   <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: 'var(--fg1)' }}>{locale.siteTitle}</div>
                 </div>
               </a>
@@ -3987,11 +4306,10 @@
 
       return (
         <div className="qd-contact-shell">
-          <header className="qd-contact-header">
+          <header className="qd-contact-header contact-nav">
             <a href="index.html" className="qd-logo-lockup">
               <img src="assets/qd-logo.jpeg" alt="QD Systems" />
               <div>
-                <div className="qd-eyebrow">{locale.eyebrow}</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: 'var(--fg1)' }}>{locale.siteTitle}</div>
               </div>
             </a>
@@ -4011,11 +4329,11 @@
             <div className="qd-hero-copy">
               <div className="qd-eyebrow" style={{ color: 'var(--acid)' }}>{locale.eyebrow}</div>
               <h1>{locale.heroTitle}</h1>
-              <p>{locale.heroSubtitle}</p>
+              {locale.heroSubtitle && <p>{locale.heroSubtitle}</p>}
             </div>
             <aside className="qd-hero-side">
               <strong>{locale.microcopy}</strong>
-              <p>{locale.sideBody}</p>
+              {locale.sideBody && <p>{locale.sideBody}</p>}
               <div className="qd-pulse-bar"><span /></div>
             </aside>
           </section>
@@ -4023,14 +4341,20 @@
           <section className="qd-contact-layout">
             <div className="qd-form-card">
               <div className="qd-progress-meta">
-                <span>{locale.stepLabel} {currentStep + 1} {locale.ofLabel} {steps.length}</span>
-                <span>{Math.round(progressPercent)}%</span>
+                <span className="qd-progress-step-label">{locale.stepLabel} {currentStep + 1} {locale.ofLabel} {steps.length}</span>
+                <span className="qd-progress-value">{Math.round(progressPercent)}%</span>
               </div>
               <div className="qd-progress-track">
-                <div className="qd-progress-fill" style={{ width: `${progressPercent}%` }} />
+                <div
+                  className="qd-progress-fill"
+                  style={{
+                    transform: `scaleX(${Math.max(0, Math.min(displayProgressPercent, 100)) / 100})`,
+                    transitionDuration: !hasInteracted && progressPercent === 0 ? '600ms' : '380ms'
+                  }}
+                />
               </div>
 
-              <div className="qd-step-shell">
+              <div className="qd-step-shell step-content">
                 <div key={activeStep.id} className="qd-step-panel">
                   <div className="qd-step-head">
                     <div className="qd-eyebrow" style={{ color: 'var(--acid)' }}>{steps[currentStep].title[language]}</div>
@@ -4065,7 +4389,7 @@
                 <div className="qd-nav-row">
                   <div className="qd-nav-cluster">
                     {currentStep > 0 && (
-                      <button type="button" className="qd-btn qd-btn-ghost qd-btn-md" onClick={() => { setCurrentStep((step) => step - 1); setShowStepValidation(false); setErrors({}); }}>
+                      <button type="button" className="qd-btn qd-btn-ghost qd-btn-md" onClick={() => { setCurrentStep((step) => step - 1); setShowStepValidation(false); setErrors({}); queueScrollToStepTop(); }}>
                         {locale.previous}
                       </button>
                     )}
@@ -4097,35 +4421,37 @@
             <aside className="qd-summary-card">
               <div className="qd-eyebrow" style={{ color: 'var(--acid)' }}>{locale.jumpLabel}</div>
               <div className="qd-summary-stats">
-                <div className="qd-stat">
-                  <strong>{answeredFieldsCount}</strong>
+                <div className={`qd-stat ${hasInteracted ? '' : 'is-placeholder'}`}>
+                  <strong>{hasInteracted ? answeredFieldsCount : '—'}</strong>
                   <span>{locale.answersCount}</span>
                 </div>
-                <div className="qd-stat">
-                  <strong>{stepCompletion.filter(Boolean).length}</strong>
+                <div className={`qd-stat ${hasInteracted ? '' : 'is-placeholder'}`}>
+                  <strong>{hasInteracted ? sectionsTouchedCount : '—'}</strong>
                   <span>{locale.sectionsDone}</span>
                 </div>
               </div>
-              <div className="qd-step-list">
-                {steps.map((step, index) => {
-                  const completed = stepCompletion[index];
-                  const suffix = currentStep === index ? locale.current : completed ? locale.complete : '';
-                  return (
-                    <button
-                      key={step.id}
-                      type="button"
-                      className={`qd-step-pill ${currentStep === index ? 'is-active' : ''} ${completed ? 'is-complete' : ''}`}
-                      onClick={() => goToStep(index)}
-                    >
-                      <span className="qd-step-index">{index + 1}</span>
-                      <strong>{step.title[language]}</strong>
-                      <span className="qd-step-complete">{suffix}</span>
-                    </button>
-                  );
-                })}
+              <div className="qd-step-list-wrap">
+                <div className="qd-step-list">
+                  {steps.map((step, index) => {
+                    const completed = stepCompletion[index];
+                    const suffix = currentStep === index ? locale.current : completed ? locale.complete : '';
+                    return (
+                      <button
+                        key={step.id}
+                        type="button"
+                        className={`qd-step-pill ${currentStep === index ? 'is-active' : ''} ${completed ? 'is-complete' : ''}`}
+                        onClick={() => goToStep(index)}
+                      >
+                        <span className="qd-step-index">{index + 1}</span>
+                        <strong>{step.title[language]}</strong>
+                        <span className="qd-step-complete">{suffix}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="qd-field-note" style={{ marginTop: 18, marginBottom: 0 }}>
-                {answeredFieldsCount} / {totalAnswerableFields}
+              <div className="qd-field-note qd-summary-footnote">
+                {hasInteracted ? `${answeredFieldsCount} / ${totalAnswerableFields}` : '— / —'}
               </div>
             </aside>
           </section>
