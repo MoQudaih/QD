@@ -25,19 +25,51 @@ import { getDb, admin } from './_lib/firebase.js';
 // Start downloading the embedding model in the background as soon as the module loads.
 warmup();
 
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
 const MAX_HISTORY = 8; // last 8 messages (4 turns)
+const DEPRECATED_GROQ_MODELS = {
+  'mixtral-8x7b-32768': 'llama-3.3-70b-versatile',
+  'llama3-70b-8192': 'llama-3.3-70b-versatile',
+  'llama3-8b-8192': 'llama-3.1-8b-instant',
+  'llama-3.1-70b-versatile': 'llama-3.3-70b-versatile',
+  'llama-3.1-70b-specdec': 'llama-3.3-70b-specdec',
+};
 
-function getRequiredChatEnv() {
+function getRequiredChatConfig() {
   const groqApiKey = process.env.GROQ_API_KEY?.trim();
   if (!groqApiKey) {
     const error = new Error(
-      'GROQ_API_KEY is missing. Add the rotated key to the root .env.local file and restart `vercel dev`.'
+      'GROQ_API_KEY is missing. Set it in the active environment before calling /api/chat.'
     );
     error.statusCode = 500;
     throw error;
   }
-  return { groqApiKey };
+
+  const groqModel = process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL;
+  const replacement = DEPRECATED_GROQ_MODELS[groqModel];
+  if (replacement) {
+    const error = new Error(
+      `GROQ_MODEL "${groqModel}" is deprecated. Use "${replacement}" instead.`
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return { groqApiKey, groqModel };
+}
+
+function extractErrorDetails(err) {
+  const details =
+    err?.error?.message ||
+    err?.response?.error?.message ||
+    err?.message ||
+    'Unknown error';
+
+  return {
+    message: details,
+    code: err?.code || err?.error?.type || null,
+    statusCode: err?.status || err?.statusCode || err?.response?.status || 500,
+  };
 }
 
 export const config = {
@@ -82,7 +114,7 @@ export default async function handler(req, res) {
   };
 
   try {
-    const { groqApiKey } = getRequiredChatEnv();
+    const { groqApiKey, groqModel } = getRequiredChatConfig();
     // ─── 1. Embed query + retrieve ──────────────────────────────────────────
     const queryEmbedding = await embedQuery(message);
     const retrieved = await retrieve(queryEmbedding, { topK: 6, lang });
@@ -117,7 +149,7 @@ export default async function handler(req, res) {
     const groq = new Groq({ apiKey: groqApiKey });
 
     const stream = await groq.chat.completions.create({
-      model: GROQ_MODEL,
+      model: groqModel,
       messages,
       tools: [LEAD_TOOL],
       tool_choice: 'auto',
@@ -207,12 +239,16 @@ export default async function handler(req, res) {
     send({ type: 'done' });
     res.end();
   } catch (err) {
-    console.error('[chat] error:', err);
+    const errorDetails = extractErrorDetails(err);
+    console.error('[chat] error:', errorDetails, err);
     send({
       type: 'error',
       message: lang === 'ar'
         ? 'حدث خطأ. جرّب مرة أخرى أو راسلنا واتساب +971 50 534 9907.'
         : 'Something went wrong. Try again, or WhatsApp us at +971 50 534 9907.',
+      details: errorDetails.message,
+      code: errorDetails.code,
+      statusCode: errorDetails.statusCode,
     });
     res.end();
   }

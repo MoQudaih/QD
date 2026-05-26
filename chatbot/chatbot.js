@@ -345,6 +345,12 @@
             if (botEl) botEl.dataset.sources = JSON.stringify(obj.items);
           } else if (obj.type === 'error') {
             removeTyping();
+            console.error('[qd-chat] backend error:', {
+              message: obj.message,
+              details: obj.details,
+              code: obj.code,
+              statusCode: obj.statusCode,
+            });
             addMessage('assistant', obj.message || STRINGS[state.lang].errorNetwork);
           } else if (obj.type === 'done') {
             // Finalize
