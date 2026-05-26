@@ -18,7 +18,7 @@
 
 import Groq from 'groq-sdk';
 import { embedQuery, warmup } from './_lib/embed.js';
-import { retrieve } from './_lib/retrieval.js';
+import { retrieve, loadChunks } from './_lib/retrieval.js';
 import { buildSystemPrompt, detectLang, LEAD_TOOL } from './_lib/prompt.js';
 import { getDb, admin } from './_lib/firebase.js';
 
@@ -26,7 +26,9 @@ import { getDb, admin } from './_lib/firebase.js';
 warmup();
 
 const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_EMBED_MODEL = 'Xenova/multilingual-e5-small';
 const MAX_HISTORY = 8; // last 8 messages (4 turns)
+const EMBEDDING_TIMEOUT_MS = 3500;
 const DEPRECATED_GROQ_MODELS = {
   'mixtral-8x7b-32768': 'llama-3.3-70b-versatile',
   'llama3-70b-8192': 'llama-3.3-70b-versatile',
@@ -70,6 +72,31 @@ function extractErrorDetails(err) {
     code: err?.code || err?.error?.type || null,
     statusCode: err?.status || err?.statusCode || err?.response?.status || 500,
   };
+}
+
+function withTimeout(promise, ms, label) {
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(`${label} timed out after ${ms}ms`);
+      error.code = 'TIMEOUT';
+      reject(error);
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+async function getFallbackContext(lang, limit = 6) {
+  const chunks = await loadChunks();
+  const matchingLang = chunks.filter((chunk) => chunk.lang === lang);
+  const pool = matchingLang.length ? matchingLang : chunks;
+  return pool.slice(0, limit).map((chunk, index) => ({
+    ...chunk,
+    score: typeof chunk.score === 'number' ? chunk.score : 0.01 - (index * 0.001),
+  }));
 }
 
 function makeStageTracker(send) {
@@ -144,16 +171,35 @@ export default async function handler(req, res) {
     const { groqApiKey, groqModel } = getRequiredChatConfig();
     stage.mark('env_checked', {
       groqModel,
-      embedModel: process.env.EMBED_MODEL || 'Xenova/multilingual-e5-base',
+      embedModel: process.env.EMBED_MODEL || DEFAULT_EMBED_MODEL,
       hasGroqApiKey: Boolean(groqApiKey),
     });
     // ─── 1. Embed query + retrieve ──────────────────────────────────────────
-    stage.mark('embedding_started', { messageLength: message.length, lang });
-    const queryEmbedding = await embedQuery(message);
-    stage.mark('embedding_completed', { dimensions: queryEmbedding?.length || 0 });
-    stage.mark('retrieval_started');
-    const retrieved = await retrieve(queryEmbedding, { topK: 6, lang });
-    stage.mark('retrieval_completed', { retrievedCount: retrieved.length });
+    let retrieved = [];
+    let retrievalMode = 'semantic';
+    try {
+      stage.mark('embedding_started', {
+        messageLength: message.length,
+        lang,
+        timeoutMs: EMBEDDING_TIMEOUT_MS,
+      });
+      const queryEmbedding = await withTimeout(embedQuery(message), EMBEDDING_TIMEOUT_MS, 'Embedding');
+      stage.mark('embedding_completed', { dimensions: queryEmbedding?.length || 0 });
+      stage.mark('retrieval_started', { mode: retrievalMode });
+      retrieved = await retrieve(queryEmbedding, { topK: 6, lang });
+      stage.mark('retrieval_completed', { retrievedCount: retrieved.length, mode: retrievalMode });
+    } catch (embedErr) {
+      retrievalMode = 'fallback';
+      const details = extractErrorDetails(embedErr);
+      stage.mark('embedding_failed', {
+        message: details.message,
+        code: details.code,
+        statusCode: details.statusCode,
+      });
+      stage.mark('fallback_context_started', { lang });
+      retrieved = await getFallbackContext(lang, 6);
+      stage.mark('fallback_context_completed', { retrievedCount: retrieved.length, mode: retrievalMode });
+    }
 
     // Tell the client what sources we used (optional, for transparency / citations)
     send({
@@ -164,6 +210,7 @@ export default async function handler(req, res) {
         heading: c.heading,
         lang: c.lang,
         score: Math.round(c.score * 1000) / 1000,
+        mode: retrievalMode,
       })),
     });
 

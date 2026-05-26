@@ -9,7 +9,7 @@ import { pipeline, env as xenovaEnv } from '@xenova/transformers';
 xenovaEnv.allowLocalModels = false;
 xenovaEnv.useBrowserCache = false;
 
-const MODEL = process.env.EMBED_MODEL || 'Xenova/multilingual-e5-base';
+const MODEL = process.env.EMBED_MODEL || 'Xenova/multilingual-e5-small';
 
 let _extractorPromise = null;
 
