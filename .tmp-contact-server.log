@@ -1,0 +1,8 @@
+═══════════════════════════════════════════════════════════
+  QD local server (no Vercel CLI needed)
+  → http://localhost:3000
+  → /api/* auto-mounts handlers from api/<name>.js
+  → /q/* rewrites to /q/index.html (matches vercel.json)
+  → /card/* rewrites to /card/index.html (matches vercel.json)
+  → /invite/* rewrites to /invite/index.html (matches vercel.json)
+═══════════════════════════════════════════════════════════
