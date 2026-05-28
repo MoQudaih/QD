@@ -50,6 +50,11 @@ const root = document.getElementById('qd-chat-admin-root');
 const returnToTab = new URLSearchParams(window.location.search).get('returnTo') === 'cards' ? 'cards' : 'dashboard';
 const backHref = `admin.html?tab=${returnToTab}`;
 const backLabel = returnToTab === 'cards' ? 'Back to Smart Cards' : 'Back to Pipeline';
+const allowedAdminEmails = [
+  'mohammedqudaih107@gmail.com',
+  'mdaya0089@gmail.com'
+];
+const unauthorizedAdminMessage = 'Unauthorized access';
 
 const state = {
   user: null,
@@ -67,6 +72,27 @@ const state = {
 let leadsUnsub = null;
 let convosUnsub = null;
 let messagesUnsub = null;
+
+const isAllowedAdminUser = (user) => Boolean(user && allowedAdminEmails.includes((user.email || '').toLowerCase()));
+const logAdminActivity = async ({ action, targetType, targetId, targetLabel, metadata = {} } = {}) => {
+  try {
+    const actor = state.user || auth.currentUser;
+    if (!actor?.uid || !actor?.email || !action) return;
+    await addDoc(collection(db, 'adminActivityLogs'), {
+      action,
+      page: 'admin',
+      targetType: targetType || 'submission',
+      targetId: String(targetId || ''),
+      targetLabel: String(targetLabel || targetId || ''),
+      actorEmail: String(actor.email || '').toLowerCase(),
+      actorUid: actor.uid,
+      timestamp: serverTimestamp(),
+      metadata: metadata && typeof metadata === 'object' ? metadata : {}
+    });
+  } catch (err) {
+    console.warn('[activity] admin log failed:', err?.message || err);
+  }
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -146,6 +172,19 @@ async function importLeadToSubmissions(lead) {
   await updateDoc(doc(db, 'chatLeads', lead.id), {
     importedSubmissionId: submissionRef.id,
     importedAt: serverTimestamp(),
+  });
+
+  await logAdminActivity({
+    action: 'import_chat_lead',
+    targetType: 'submission',
+    targetId: submissionRef.id,
+    targetLabel: lead.name || lead.contact || submissionRef.id,
+    metadata: {
+      chatLeadId: lead.id,
+      chatSessionId: lead.sessionId || '',
+      businessType: lead.business_type || '',
+      urgency: lead.urgency || 'unknown'
+    }
   });
 
   return submissionRef.id;
@@ -427,10 +466,17 @@ function subscribeMessages(sessionId) {
 }
 
 onAuthStateChanged(auth, async (user) => {
+  console.log('Admin auth check:', user?.email);
   state.user = user;
   state.authLoading = false;
+  state.loginError = '';
 
-  if (user) {
+  if (user && !isAllowedAdminUser(user)) {
+    state.user = null;
+    state.loginError = unauthorizedAdminMessage;
+  }
+
+  if (user && isAllowedAdminUser(user)) {
     subscribeLeads();
     subscribeConversations();
   } else {
@@ -439,9 +485,20 @@ onAuthStateChanged(auth, async (user) => {
     if (messagesUnsub) { messagesUnsub(); messagesUnsub = null; }
     state.leads = [];
     state.conversations = [];
+    state.selectedLeadId = null;
+    state.selectedConvoId = null;
+    state.selectedConvoMessages = [];
   }
 
   render();
+
+  if (user && !isAllowedAdminUser(user)) {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Unauthorized admin sign-out failed:', err);
+    }
+  }
 });
 
 render();

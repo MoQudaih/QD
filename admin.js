@@ -56,7 +56,11 @@ import { CATALOG, catalogToLineItem } from '/app/lib/quote-catalog.js';
 import { computeTotals, formatAED } from '/app/lib/quote-totals.js';
 
 const root = document.getElementById('qd-admin-root');
-const allowedAdminEmails = null;
+const allowedAdminEmails = [
+  'mohammedqudaih107@gmail.com',
+  'mdaya0089@gmail.com'
+];
+const unauthorizedAdminMessage = 'Unauthorized access';
 const statusOptions = ['New', 'Reviewed', 'Contacted', 'Quoted', 'Accepted', 'Under Construction', 'Completed', 'Rejected', 'Archived'];
 const priorityOptions = ['Low', 'Normal', 'High', 'VIP'];
 const CARD_SITE_URL = 'https://qdsystems.ae';
@@ -64,27 +68,84 @@ const CARD_DEFAULT_WEBSITE = 'https://qdsystems.ae';
 const CARD_DEFAULT_CTA_LABEL = 'Start a Build';
 const CARD_DEFAULT_CTA_URL = 'https://qdsystems.ae/contact.html';
 const cardIconOptions = ['website', 'email', 'phone', 'whatsapp', 'instagram', 'linkedin', 'link'];
+const INVITE_THEME_OPTIONS = ['royal-gold', 'minimal-white', 'modern-black', 'arabic-luxury', 'floral-elegant'];
+const INVITE_STATUS_OPTIONS = ['draft', 'active', 'disabled'];
+const inviteThemeLabels = {
+  'royal-gold': 'Royal Gold',
+  'minimal-white': 'Minimal White',
+  'modern-black': 'Modern Black',
+  'arabic-luxury': 'Arabic Luxury',
+  'floral-elegant': 'Floral Elegant'
+};
+const inviteStatusLabels = {
+  draft: 'Draft',
+  active: 'Active',
+  disabled: 'Disabled'
+};
+const adminTabs = new Set(['dashboard', 'cards', 'activity', 'invitations']);
+const initialAdminTab = new URLSearchParams(window.location.search).get('tab');
+const initialActivitySearch = new URLSearchParams(window.location.search).get('activitySearch') || '';
+const activityActionLabels = {
+  login: 'Logged in',
+  logout: 'Logged out',
+  open_submission: 'Opened submission',
+  edit_submission: 'Edited submission',
+  change_status: 'Changed status',
+  change_priority: 'Changed priority',
+  create_quote: 'Created quote',
+  update_quote: 'Updated quote',
+  import_chat_lead: 'Imported chat lead',
+  open_smart_card: 'Opened smart card',
+  create_smart_card: 'Created smart card',
+  edit_smart_card: 'Edited smart card',
+  delete_smart_card: 'Deleted smart card'
+};
+const activityTargetTypeLabels = {
+  session: 'Session',
+  submission: 'Submission',
+  quote: 'Quote',
+  smart_card: 'Smart Card',
+  chat_lead: 'Chat Lead'
+};
+const activityOpenSessionKey = 'qd-admin-activity-opened-v1';
 
 const state = {
   authLoading: true,
   dataLoading: false,
   cardsLoading: false,
+  invitationsLoading: false,
+  invitationRsvpsLoading: false,
+  activityLoading: false,
+  submissionActivityLoading: false,
   isLoggingIn: false,
   isSaving: false,
   user: null,
   loginError: '',
   dataError: '',
   cardsError: '',
+  invitationsError: '',
+  invitationRsvpsError: '',
+  activityError: '',
+  submissionActivityError: '',
   saveError: '',
   copyFeedback: '',
   adminToast: '',
-  activeTab: new URLSearchParams(window.location.search).get('tab') === 'cards' ? 'cards' : 'dashboard',
+  activeTab: adminTabs.has(initialAdminTab) ? initialAdminTab : 'dashboard',
   submissions: [],
   cards: [],
+  invitations: [],
+  invitationRsvps: [],
+  activityLogs: [],
+  submissionActivityLogs: [],
   filters: {
     search: '',
     status: 'All',
     priority: 'All'
+  },
+  activityFilters: {
+    search: initialActivitySearch,
+    action: 'All',
+    targetType: 'All'
   },
   pipelinePage: 0,
   budgetProjectsPage: 0,
@@ -92,26 +153,57 @@ const state = {
   selectedId: null,
   drawerDraft: null,
   quotesBySubmissionId: {},
-  quoteDrawer: { open: false, quote: null, dirty: false },
+  quoteDrawer: { open: false, quote: null, original: null, dirty: false },
   quoteToast: '',
   cardEditor: {
     open: false,
     mode: 'create',
     id: null,
     draft: null,
+    original: null,
     slugState: { status: 'idle', message: '' },
     slugTouched: false,
     isSaving: false,
     error: '',
     pendingAvatarFile: null
-  }
+  },
+  invitationEditor: {
+    open: false,
+    mode: 'create',
+    id: null,
+    draft: null,
+    original: null,
+    slugState: { status: 'idle', message: '' },
+    slugTouched: false,
+    isSaving: false,
+    error: '',
+    pendingCoverFile: null,
+    pendingMusicFile: null
+  },
+  pendingLoginAudit: false
 };
 
 let unsubscribeSnapshot = null;
 let unsubscribeQuotesSnapshot = null;
 let unsubscribeCardsSnapshot = null;
+let unsubscribeInvitationsSnapshot = null;
+let unsubscribeInvitationRsvpsSnapshot = null;
+let unsubscribeActivityLogsSnapshot = null;
+let unsubscribeSubmissionActivitySnapshot = null;
 let copyFeedbackTimeout = null;
 let adminToastTimeout = null;
+let isModalOpen = false;
+let currentSubmissionActivityTargetId = null;
+let currentInvitationRsvpsTargetId = null;
+const openedActivitySessionSet = new Set((() => {
+  try {
+    const raw = window.sessionStorage.getItem(activityOpenSessionKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+})());
 
 const fieldLabels = {
   businessName: 'Business Name',
@@ -329,9 +421,225 @@ const createEmptyCardDraft = () => ({
   views: 0
 });
 
+const getInvitePublicUrl = (slug) => `${CARD_SITE_URL}/invite/${slug}`;
+
+const createEmptyInvitationDraft = () => ({
+  slug: '',
+  brideName: '',
+  groomName: '',
+  coupleDisplayName: '',
+  eventTitle: 'Wedding Invitation',
+  eventDate: '',
+  eventTime: '',
+  venueName: '',
+  venueAddress: '',
+  mapUrl: '',
+  languageDefault: 'en',
+  theme: 'royal-gold',
+  coverImageUrl: '',
+  coverImageStoragePath: '',
+  musicUrl: '',
+  musicStoragePath: '',
+  rsvpEnabled: true,
+  whatsappNumber: '',
+  active: false,
+  status: 'draft',
+  views: 0,
+  rsvpCount: 0
+});
+
 const hydrateCard = (snapshot) => ({
   id: snapshot.id,
   ...snapshot.data()
+});
+
+const hydrateInvitation = (snapshot) => ({
+  id: snapshot.id,
+  ...createEmptyInvitationDraft(),
+  ...snapshot.data()
+});
+
+const hydrateInvitationRsvp = (snapshot) => ({
+  id: snapshot.id,
+  ...snapshot.data()
+});
+
+const hydrateActivityLog = (snapshot) => {
+  const data = snapshot.data();
+  return {
+    id: snapshot.id,
+    ...data,
+    metadata: data.metadata && typeof data.metadata === 'object' ? data.metadata : {},
+    timestampMs: getTimestampMs(data.timestamp)
+  };
+};
+
+const deepCloneForLog = (value) => JSON.parse(JSON.stringify(value ?? null));
+
+const normalizeLogValue = (value) => {
+  if (Array.isArray(value)) return value.map(normalizeLogValue);
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = normalizeLogValue(value[key]);
+      return acc;
+    }, {});
+  }
+  return value ?? null;
+};
+
+const areLogValuesEqual = (a, b) => JSON.stringify(normalizeLogValue(a)) === JSON.stringify(normalizeLogValue(b));
+
+const getActivityActionLabel = (value) => activityActionLabels[value] || formatLabel(value || 'activity');
+const getActivityTargetTypeLabel = (value) => activityTargetTypeLabels[value] || formatLabel(value || 'record');
+
+const formatActivityTimestamp = (value) => {
+  const ms = getTimestampMs(value);
+  if (ms) return formatDate(value);
+  return 'Pending sync';
+};
+
+const rememberOpenedActivityKey = (key) => {
+  openedActivitySessionSet.add(key);
+  try {
+    window.sessionStorage.setItem(activityOpenSessionKey, JSON.stringify([...openedActivitySessionSet]));
+  } catch {}
+};
+
+const shouldSkipOpenActivityLog = ({ action, targetType, targetId, actorUid }) => {
+  if (!['open_submission', 'open_smart_card'].includes(action)) return false;
+  const key = `${String(actorUid || '')}:${action}:${String(targetId || '')}`;
+  if (openedActivitySessionSet.has(key)) return true;
+  rememberOpenedActivityKey(key);
+  return false;
+};
+
+const formatActivityValueForDisplay = (value) => {
+  if (Array.isArray(value)) {
+    if (!value.length) return 'None';
+    return value.map((item) => formatActivityValueForDisplay(item)).join(', ');
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .map(([key, item]) => `${formatLabel(key)}: ${formatActivityValueForDisplay(item)}`)
+      .join(' | ');
+  }
+  if (value === null || value === undefined || value === '') return 'Not provided';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'Not provided';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 'Not provided';
+    return trimmed;
+  }
+  return String(value);
+};
+
+const summarizeActivityMetadata = (metadata = {}) => {
+  const rows = [];
+  const changedFields = Array.isArray(metadata.changedFields) ? metadata.changedFields : [];
+  if (changedFields.length && metadata.before && metadata.after) {
+    rows.push(`Changed fields: ${changedFields.map((field) => formatLabel(field)).join(', ')}`);
+    changedFields.forEach((field) => {
+      rows.push(`${formatLabel(field)}: ${formatActivityValueForDisplay(metadata.before[field])} -> ${formatActivityValueForDisplay(metadata.after[field])}`);
+    });
+  }
+
+  Object.entries(metadata).forEach(([key, value]) => {
+    if (['changedFields', 'before', 'after'].includes(key)) return;
+    rows.push(`${formatLabel(key)}: ${formatActivityValueForDisplay(value)}`);
+  });
+
+  return rows;
+};
+
+const buildChangedMetadata = (before = {}, after = {}) => {
+  const keys = Array.from(new Set([...Object.keys(before || {}), ...Object.keys(after || {})]));
+  const changedFields = keys.filter((key) => !areLogValuesEqual(before[key], after[key]));
+  return {
+    changedFields,
+    before: changedFields.reduce((acc, key) => {
+      acc[key] = before[key] ?? null;
+      return acc;
+    }, {}),
+    after: changedFields.reduce((acc, key) => {
+      acc[key] = after[key] ?? null;
+      return acc;
+    }, {})
+  };
+};
+
+const logAdminActivity = async ({
+  action,
+  targetType,
+  targetId,
+  targetLabel,
+  metadata = {}
+} = {}) => {
+  try {
+    const actor = state.user;
+    if (!actor?.uid || !actor?.email || !action) return;
+    if (shouldSkipOpenActivityLog({ action, targetType, targetId, actorUid: actor.uid })) return;
+    await addDoc(collection(db, 'adminActivityLogs'), {
+      action,
+      page: 'admin',
+      targetType: targetType || 'submission',
+      targetId: String(targetId || ''),
+      targetLabel: String(targetLabel || targetId || ''),
+      actorEmail: String(actor.email || '').toLowerCase(),
+      actorUid: actor.uid,
+      timestamp: serverTimestamp(),
+      metadata: metadata && typeof metadata === 'object' ? metadata : {}
+    });
+  } catch (error) {
+    console.warn('[activity] admin log failed:', error?.message || error);
+  }
+};
+
+const getSubmissionActivityLabel = (submission) => {
+  const label = formatValue(getAnswer(submission, 'businessName'));
+  return /^not provided$/i.test(label) ? submission?.id || 'Submission' : label;
+};
+
+const getSmartCardActivityLabel = (card) => card?.name || card?.slug || card?.id || 'Smart card';
+
+const getSubmissionLogState = (submission) => {
+  if (!submission) return {};
+  const logState = {
+    status: submission.status ?? 'New',
+    priority: submission.priority ?? 'Normal',
+    notes: submission.notes ?? ''
+  };
+  editableSubmissionFields.forEach(({ key }) => {
+    logState[key] = getAnswer(submission, key);
+  });
+  return logState;
+};
+
+const getSmartCardLogState = (card) => ({
+  slug: card?.slug || '',
+  name: card?.name || '',
+  role: card?.role || '',
+  company: card?.company || '',
+  phone: card?.phone || '',
+  email: card?.email || '',
+  website: card?.website || '',
+  links: deepCloneForLog(card?.links || []),
+  ctaLabel: card?.ctaLabel || '',
+  ctaUrl: card?.ctaUrl || '',
+  active: card?.active !== false,
+  views: Number(card?.views || 0),
+  avatar: card?.avatar || ''
+});
+
+const getQuoteLogState = (quote) => ({
+  customer: deepCloneForLog(quote?.customer || {}),
+  lineItems: deepCloneForLog(quote?.lineItems || []),
+  pages: deepCloneForLog(quote?.pages || {}),
+  terms: deepCloneForLog(quote?.terms || {}),
+  notes: quote?.notes || '',
+  validDays: Number(quote?.validDays || 0),
+  vatPercent: Number(quote?.vatPercent || 0),
+  language: quote?.language || 'en'
 });
 
 const buildCardLinkRows = (links = []) => {
@@ -377,6 +685,63 @@ const getCardEditorDraftFromState = () => ({
 });
 
 const buildCardEditorPreviewUrl = (slug) => getCardPublicUrl(slugifyCardValue(slug) || 'your-slug');
+const buildInvitationPreviewUrl = (slug) => getInvitePublicUrl(slugifyCardValue(slug) || 'your-invitation');
+
+const getInvitationStatus = (invitation) => {
+  if (!invitation) return 'draft';
+  if (INVITE_STATUS_OPTIONS.includes(invitation.status)) return invitation.status;
+  return invitation.active ? 'active' : 'draft';
+};
+
+const getInvitationStatusLabel = (invitation) => inviteStatusLabels[getInvitationStatus(invitation)] || 'Draft';
+
+const getInvitationStatusClass = (invitation) => {
+  const status = getInvitationStatus(invitation);
+  if (status === 'active') return 'is-active';
+  if (status === 'disabled') return 'is-disabled';
+  return 'is-draft';
+};
+
+const deriveInvitationDisplayName = (draft) => {
+  const bride = String(draft?.brideName || '').trim();
+  const groom = String(draft?.groomName || '').trim();
+  const manual = String(draft?.coupleDisplayName || '').trim();
+  if (manual) return manual;
+  if (bride && groom) {
+    return draft?.languageDefault === 'ar' ? `${bride} و ${groom}` : `${bride} & ${groom}`;
+  }
+  return bride || groom || '';
+};
+
+const formatInvitationDate = (value) => {
+  if (!value) return 'Date not set';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' }).format(parsed);
+};
+
+const formatInvitationRsvpTime = (value) => {
+  const ms = getTimestampMs(value);
+  if (!ms) return 'Pending sync';
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(ms);
+};
+
+const normalizeWhatsappAdminNumber = (value) => String(value ?? '').replace(/[^\d+]/g, '');
+
+const buildInvitationWhatsappShareUrl = (invitation) => {
+  const link = getInvitePublicUrl(invitation.slug || '');
+  const names = deriveInvitationDisplayName(invitation) || 'Our wedding';
+  const isArabic = invitation.languageDefault === 'ar';
+  const message = isArabic
+    ? `ندعوكم لحضور زفاف ${names}. رابط الدعوة: ${link}`
+    : `You are invited to celebrate ${names}. View invitation: ${link}`;
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+};
+
+const getInvitationEditorDraftFromState = () => ({
+  ...createEmptyInvitationDraft(),
+  ...(state.invitationEditor?.draft || {})
+});
 
 const formatLabel = (value) => {
   if (value === null || value === undefined || value === '') return 'Not Provided';
@@ -530,7 +895,6 @@ const formatValue = (value, { type = 'text' } = {}) => {
 
 const isAllowedAdminUser = (user) => {
   if (!user) return false;
-  if (!Array.isArray(allowedAdminEmails) || allowedAdminEmails.length === 0) return true;
   return allowedAdminEmails.includes((user.email || '').toLowerCase());
 };
 
@@ -1406,6 +1770,8 @@ const renderAdminTabs = () => `
   <nav class="qd-admin-tabs" aria-label="Admin sections">
     <button class="qd-admin-tab ${state.activeTab === 'dashboard' ? 'is-active' : ''}" type="button" data-action="set-admin-tab" data-tab="dashboard">Pipeline</button>
     <button class="qd-admin-tab ${state.activeTab === 'cards' ? 'is-active' : ''}" type="button" data-action="set-admin-tab" data-tab="cards">Smart Cards</button>
+    <button class="qd-admin-tab ${state.activeTab === 'invitations' ? 'is-active' : ''}" type="button" data-action="set-admin-tab" data-tab="invitations">Invitations</button>
+    <button class="qd-admin-tab ${state.activeTab === 'activity' ? 'is-active' : ''}" type="button" data-action="set-admin-tab" data-tab="activity">Activity</button>
     <a class="qd-admin-tab qd-admin-tab-link" href="chat-admin.html?returnTo=${escapeHtml(state.activeTab)}">Chat Leads</a>
   </nav>
 `;
@@ -1637,6 +2003,460 @@ const renderCardsManager = () => `
     </article>
   </section>
 `;
+
+const renderInvitationRows = (items) => {
+  if (state.invitationsLoading && !items.length) {
+    return `
+      <tr>
+        <td colspan="7">
+          <div class="qd-admin-empty-state">
+            <strong>Loading invitations</strong>
+            <p>Opening the realtime Firestore listener for wedding invitations.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  if (!items.length) {
+    return `
+      <tr>
+        <td colspan="7">
+          <div class="qd-admin-empty-state">
+            <strong>No invitations yet</strong>
+            <p>Create the first premium wedding invitation link for a client.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  return items.map((invitation) => `
+    <tr>
+      <td>
+        <div class="qd-admin-card-person">
+          <div class="qd-admin-card-avatar qd-admin-invite-avatar">${escapeHtml((deriveInvitationDisplayName(invitation) || 'WI').slice(0, 2).toUpperCase())}</div>
+          <div>
+            <strong>${escapeHtml(deriveInvitationDisplayName(invitation) || 'Untitled Invitation')}</strong>
+            <span>${escapeHtml(invitation.eventTitle || 'Wedding Invitation')}</span>
+          </div>
+        </div>
+      </td>
+      <td>${escapeHtml(formatInvitationDate(invitation.eventDate))}</td>
+      <td>${escapeHtml(invitation.venueName || 'Venue not set')}</td>
+      <td><span class="qd-admin-card-status qd-admin-invite-status ${getInvitationStatusClass(invitation)}">${escapeHtml(getInvitationStatusLabel(invitation))}</span></td>
+      <td>
+        <div class="qd-admin-card-slug-wrap">
+          <span>${escapeHtml(invitation.slug || '-')}</span>
+          <small>${escapeHtml(getInvitePublicUrl(invitation.slug || ''))}</small>
+        </div>
+      </td>
+      <td>
+        <div class="qd-admin-card-slug-wrap">
+          <span>${escapeHtml(String(invitation.views ?? 0))} views</span>
+          <small>${escapeHtml(String(invitation.rsvpCount ?? 0))} RSVPs</small>
+        </div>
+      </td>
+      <td>
+        <div class="qd-admin-row-actions">
+          <button class="qd-admin-row-button" type="button" data-action="edit-invitation" data-id="${escapeHtml(invitation.id)}">Edit</button>
+          <button class="qd-admin-row-button" type="button" data-action="preview-invitation" data-id="${escapeHtml(invitation.id)}">Preview</button>
+          <button class="qd-admin-row-button" type="button" data-action="copy-invitation-link" data-id="${escapeHtml(invitation.id)}">Copy Link</button>
+          <button class="qd-admin-row-button" type="button" data-action="share-invitation-whatsapp" data-id="${escapeHtml(invitation.id)}">WhatsApp</button>
+          <button class="qd-admin-row-button is-danger" type="button" data-action="delete-invitation" data-id="${escapeHtml(invitation.id)}">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+};
+
+const renderInvitationCards = (items) => {
+  if (!items.length) return '';
+  return items.map((invitation) => `
+    <article class="qd-admin-mobile-card qd-admin-card-mobile-card">
+      <div class="qd-admin-card-person">
+        <div class="qd-admin-card-avatar qd-admin-invite-avatar">${escapeHtml((deriveInvitationDisplayName(invitation) || 'WI').slice(0, 2).toUpperCase())}</div>
+        <div>
+          <strong>${escapeHtml(deriveInvitationDisplayName(invitation) || 'Untitled Invitation')}</strong>
+          <span>${escapeHtml(invitation.eventTitle || 'Wedding Invitation')}</span>
+        </div>
+      </div>
+      <div class="qd-admin-mobile-card-grid">
+        <div><strong>Date</strong><span>${escapeHtml(formatInvitationDate(invitation.eventDate))}</span></div>
+        <div><strong>Status</strong><span>${escapeHtml(getInvitationStatusLabel(invitation))}</span></div>
+        <div><strong>Venue</strong><span>${escapeHtml(invitation.venueName || 'Venue not set')}</span></div>
+        <div><strong>Views / RSVPs</strong><span>${escapeHtml(String(invitation.views ?? 0))} / ${escapeHtml(String(invitation.rsvpCount ?? 0))}</span></div>
+      </div>
+      <div class="qd-admin-card-mobile-actions">
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="edit-invitation" data-id="${escapeHtml(invitation.id)}">Edit</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="preview-invitation" data-id="${escapeHtml(invitation.id)}">Preview</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="copy-invitation-link" data-id="${escapeHtml(invitation.id)}">Copy</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="share-invitation-whatsapp" data-id="${escapeHtml(invitation.id)}">WhatsApp</button>
+        <button class="qd-btn qd-btn-sm qd-admin-action-danger" type="button" data-action="delete-invitation" data-id="${escapeHtml(invitation.id)}">Delete</button>
+      </div>
+    </article>
+  `).join('');
+};
+
+const renderInvitationEditor = () => {
+  if (!state.invitationEditor.open) return '';
+
+  const draft = getInvitationEditorDraftFromState();
+  const previewUrl = buildInvitationPreviewUrl(draft.slug);
+  const slugState = state.invitationEditor.slugState || { status: 'idle', message: '' };
+
+  return `
+    <div class="qd-admin-modal-overlay">
+      <button class="qd-admin-modal-backdrop" type="button" data-action="close-invitation-editor" aria-label="Close invitation editor"></button>
+      <aside class="qd-admin-drawer qd-admin-card-editor qd-admin-invitation-editor" role="dialog" aria-modal="true" aria-label="Wedding invitation editor">
+        <button class="qd-admin-drawer-close qd-admin-drawer-close-floating" type="button" data-action="close-invitation-editor" aria-label="Close">X</button>
+
+        <section class="qd-admin-card-editor-head">
+          <div>
+            <div class="qd-eyebrow qd-admin-kicker">Wedding Invitations</div>
+            <h2>${state.invitationEditor.mode === 'edit' ? 'Edit invitation' : 'Create invitation'}</h2>
+            <p>Design a premium, shareable invitation link with RSVP, bilingual support, and media-rich presentation.</p>
+          </div>
+          <div class="qd-admin-card-editor-preview">
+            <span>Preview URL</span>
+            <code id="invitation-preview-url">${escapeHtml(previewUrl)}</code>
+            <div class="qd-admin-card-mobile-actions">
+              <button class="qd-btn qd-btn-sm qd-admin-action-secondary" type="button" data-action="copy-invitation-preview">Copy Public Link</button>
+              <button class="qd-btn qd-btn-sm qd-admin-action-primary" type="button" data-action="preview-invitation-draft">Open Preview</button>
+            </div>
+          </div>
+        </section>
+
+        ${state.invitationEditor.error ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.invitationEditor.error)}</div>` : ''}
+
+        <form class="qd-admin-card-form" id="invitation-editor-form">
+          <div class="qd-admin-admin-grid qd-admin-card-grid-fields qd-admin-invitation-grid">
+            <div class="qd-admin-field">
+              <label for="invite-bride-name">Bride Name</label>
+              <input id="invite-bride-name" class="qd-admin-input" name="brideName" type="text" value="${escapeHtml(draft.brideName || '')}" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-groom-name">Groom Name</label>
+              <input id="invite-groom-name" class="qd-admin-input" name="groomName" type="text" value="${escapeHtml(draft.groomName || '')}" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-event-title">Event Title</label>
+              <input id="invite-event-title" class="qd-admin-input" name="eventTitle" type="text" value="${escapeHtml(draft.eventTitle || '')}" placeholder="Wedding Invitation">
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-slug">Slug / Custom Link</label>
+              <input id="invite-slug" class="qd-admin-input ${slugState.status === 'invalid' ? 'is-invalid' : slugState.status === 'valid' ? 'is-valid' : ''}" name="slug" type="text" value="${escapeHtml(draft.slug || '')}" required>
+              <div class="qd-admin-field-hint" id="invite-slug-hint">${escapeHtml(slugState.message || 'Use lowercase letters, numbers, and hyphens only.')}</div>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-event-date">Event Date</label>
+              <input id="invite-event-date" class="qd-admin-input" name="eventDate" type="date" value="${escapeHtml(draft.eventDate || '')}" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-event-time">Event Time</label>
+              <input id="invite-event-time" class="qd-admin-input" name="eventTime" type="time" value="${escapeHtml(draft.eventTime || '')}">
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-venue-name">Venue Name</label>
+              <input id="invite-venue-name" class="qd-admin-input" name="venueName" type="text" value="${escapeHtml(draft.venueName || '')}" required>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-whatsapp">WhatsApp Number</label>
+              <input id="invite-whatsapp" class="qd-admin-input" name="whatsappNumber" type="text" value="${escapeHtml(draft.whatsappNumber || '')}" placeholder="+9715...">
+            </div>
+            <div class="qd-admin-field qd-admin-field-span-2">
+              <label for="invite-venue-address">Venue Address</label>
+              <textarea id="invite-venue-address" class="qd-admin-textarea" name="venueAddress">${escapeHtml(draft.venueAddress || '')}</textarea>
+            </div>
+            <div class="qd-admin-field qd-admin-field-span-2">
+              <label for="invite-map-url">Google Maps / Location URL</label>
+              <input id="invite-map-url" class="qd-admin-input" name="mapUrl" type="url" value="${escapeHtml(draft.mapUrl || '')}" placeholder="https://maps.google.com/...">
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-language-default">Default Language</label>
+              <select id="invite-language-default" class="qd-admin-select" name="languageDefault">
+                <option value="en" ${draft.languageDefault === 'en' ? 'selected' : ''}>English</option>
+                <option value="ar" ${draft.languageDefault === 'ar' ? 'selected' : ''}>Arabic</option>
+              </select>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-theme">Theme</label>
+              <select id="invite-theme" class="qd-admin-select" name="theme">
+                ${INVITE_THEME_OPTIONS.map((theme) => `<option value="${escapeHtml(theme)}" ${draft.theme === theme ? 'selected' : ''}>${escapeHtml(inviteThemeLabels[theme])}</option>`).join('')}
+              </select>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-status">Status</label>
+              <select id="invite-status" class="qd-admin-select" name="status">
+                ${INVITE_STATUS_OPTIONS.map((status) => `<option value="${escapeHtml(status)}" ${getInvitationStatus(draft) === status ? 'selected' : ''}>${escapeHtml(inviteStatusLabels[status])}</option>`).join('')}
+              </select>
+            </div>
+            <div class="qd-admin-field">
+              <label for="invite-couple-display-name">Display Names <span class="qd-admin-field-optional">(optional)</span></label>
+              <input id="invite-couple-display-name" class="qd-admin-input" name="coupleDisplayName" type="text" value="${escapeHtml(draft.coupleDisplayName || '')}" placeholder="${escapeHtml(deriveInvitationDisplayName(draft) || 'Aisha & Omar')}">
+            </div>
+            <div class="qd-admin-field qd-admin-card-avatar-field">
+              <label for="invite-cover-image">Cover Image</label>
+              <input id="invite-cover-image" class="qd-admin-input qd-admin-file-input" name="coverImageFile" type="file" accept="image/*">
+              <div class="qd-admin-field-hint">${escapeHtml(state.invitationEditor.pendingCoverFile?.name || draft.coverImageUrl || 'Uploads to Firebase Storage at invitations/[slug]/cover.*')}</div>
+            </div>
+            <div class="qd-admin-field qd-admin-card-avatar-field">
+              <label for="invite-music-file">Background Music</label>
+              <input id="invite-music-file" class="qd-admin-input qd-admin-file-input" name="musicFile" type="file" accept="audio/*">
+              <div class="qd-admin-field-hint">${escapeHtml(state.invitationEditor.pendingMusicFile?.name || draft.musicUrl || 'Uploads to Firebase Storage at invitations/[slug]/music.*')}</div>
+            </div>
+            <label class="qd-admin-toggle">
+              <input id="invite-rsvp-enabled" name="rsvpEnabled" type="checkbox" ${draft.rsvpEnabled ? 'checked' : ''}>
+              <span>RSVP form is enabled</span>
+            </label>
+            <label class="qd-admin-toggle">
+              <input id="invite-active" name="active" type="checkbox" ${draft.active ? 'checked' : ''}>
+              <span>Invitation is publicly active</span>
+            </label>
+          </div>
+
+          <section class="qd-admin-drawer-group qd-admin-drawer-admin">
+            <div class="qd-admin-drawer-group-head">
+              <h3>RSVP Activity</h3>
+              <div class="qd-admin-card-slug-wrap">
+                <span>${escapeHtml(String(draft.rsvpCount || 0))} total RSVPs</span>
+                <small>${escapeHtml(String(draft.views || 0))} public views</small>
+              </div>
+            </div>
+            ${state.invitationRsvpsError ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.invitationRsvpsError)}</div>` : ''}
+            ${state.invitationRsvpsLoading && !state.invitationRsvps.length ? `
+              <div class="qd-admin-empty-state">
+                <strong>Loading RSVPs</strong>
+                <p>Waiting for guest responses.</p>
+              </div>
+            ` : state.invitationRsvps.length ? `
+              <div class="qd-admin-table-wrap">
+                <table class="qd-admin-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Phone</th>
+                      <th>Attending</th>
+                      <th>Guests</th>
+                      <th>Message</th>
+                      <th>Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${state.invitationRsvps.map((rsvp) => `
+                      <tr>
+                        <td>${escapeHtml(rsvp.name || '-')}</td>
+                        <td>${escapeHtml(rsvp.phone || '-')}</td>
+                        <td>${escapeHtml(rsvp.attending === 'yes' ? 'Attending' : 'Not attending')}</td>
+                        <td>${escapeHtml(String(rsvp.guests ?? 1))}</td>
+                        <td>${escapeHtml(rsvp.message || '-')}</td>
+                        <td>${escapeHtml(formatInvitationRsvpTime(rsvp.createdAt))}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            ` : `
+              <div class="qd-admin-empty-state">
+                <strong>No RSVPs yet</strong>
+                <p>Guest confirmations will appear here after the invitation is shared.</p>
+              </div>
+            `}
+          </section>
+
+          <div class="qd-admin-save-row">
+            <span class="qd-admin-save-help">Cover media is stored in Firebase Storage, public URLs are generated automatically, and the invitation stays available at its slug.</span>
+            <button class="qd-btn qd-btn-md qd-admin-action-primary" type="submit" ${state.invitationEditor.isSaving ? 'disabled' : ''}>
+              ${state.invitationEditor.isSaving ? 'Saving...' : state.invitationEditor.mode === 'edit' ? 'Save invitation' : 'Create invitation'}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  `;
+};
+
+const renderInvitationsManager = () => `
+  <section class="qd-admin-dashboard qd-admin-cards-dashboard">
+    ${state.invitationsError ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.invitationsError)}</div>` : ''}
+
+    <article class="qd-admin-card qd-admin-table-card">
+      <div class="qd-admin-section-head">
+        <div>
+          <div class="qd-eyebrow qd-admin-kicker">Wedding Invitations</div>
+          <h2>Premium invitation links</h2>
+          <p>Create luxurious bilingual invitation pages with countdowns, RSVP flows, theme presets, cover media, and WhatsApp-ready sharing.</p>
+        </div>
+        <div class="qd-admin-cards-toolbar">
+          <button class="qd-btn qd-btn-sm qd-admin-action-primary" type="button" data-action="open-invitation-create">Create invitation</button>
+        </div>
+      </div>
+
+      <div class="qd-admin-table-wrap">
+        <table class="qd-admin-table">
+          <thead>
+            <tr>
+              <th>Couple</th>
+              <th>Date</th>
+              <th>Venue</th>
+              <th>Status</th>
+              <th>Public Link</th>
+              <th>Performance</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${renderInvitationRows(state.invitations)}</tbody>
+        </table>
+      </div>
+
+      <div class="qd-admin-mobile-list">
+        ${renderInvitationCards(state.invitations)}
+      </div>
+    </article>
+  </section>
+`;
+
+const getFilteredActivityLogs = () => {
+  const search = state.activityFilters.search.trim().toLowerCase();
+  return state.activityLogs.filter((log) => {
+    if (state.activityFilters.action !== 'All' && log.action !== state.activityFilters.action) return false;
+    if (state.activityFilters.targetType !== 'All' && log.targetType !== state.activityFilters.targetType) return false;
+    if (!search) return true;
+
+    const haystack = [
+      log.actorEmail,
+      log.action,
+      log.targetType,
+      log.targetLabel,
+      log.targetId,
+      ...summarizeActivityMetadata(log.metadata || {})
+    ].join(' ').toLowerCase();
+
+    return haystack.includes(search);
+  });
+};
+
+const renderActivityRows = (logs) => {
+  if (state.activityLoading && !logs.length) {
+    return `
+      <tr>
+        <td colspan="6">
+          <div class="qd-admin-empty-state">
+            <strong>Loading activity</strong>
+            <p>Opening the realtime Firestore listener for admin activity logs.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  if (!logs.length) {
+    return `
+      <tr>
+        <td colspan="6">
+          <div class="qd-admin-empty-state">
+            <strong>No activity yet</strong>
+            <p>Meaningful admin actions will appear here after they happen.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  return logs.map((log) => `
+    <tr>
+      <td>${escapeHtml(formatActivityTimestamp(log.timestamp))}</td>
+      <td>${escapeHtml(log.actorEmail || 'Unknown')}</td>
+      <td>${escapeHtml(getActivityActionLabel(log.action))}</td>
+      <td>${escapeHtml(getActivityTargetTypeLabel(log.targetType))}</td>
+      <td>
+        <div class="qd-admin-card-slug-wrap">
+          <span>${escapeHtml(log.targetLabel || log.targetId || 'Unknown')}</span>
+          <small>${escapeHtml(log.targetId || '-')}</small>
+        </div>
+      </td>
+      <td>${summarizeActivityMetadata(log.metadata || {}).map((row) => `<div class="qd-admin-detail-value">${escapeHtml(row)}</div>`).join('')}</td>
+    </tr>
+  `).join('');
+};
+
+const renderActivityCards = (logs) => {
+  if (!logs.length) return '';
+  return logs.map((log) => `
+    <article class="qd-admin-mobile-card">
+      <div class="qd-admin-mobile-card-head">
+        <div>
+          <div class="qd-admin-business-name">${escapeHtml(getActivityActionLabel(log.action))}</div>
+          <div class="qd-admin-subline">${escapeHtml(log.actorEmail || 'Unknown')}</div>
+        </div>
+        <span class="qd-status-pill" data-tone="neutral">${escapeHtml(getActivityTargetTypeLabel(log.targetType))}</span>
+      </div>
+      <div class="qd-admin-mobile-card-grid">
+        <div><strong>When</strong><span>${escapeHtml(formatActivityTimestamp(log.timestamp))}</span></div>
+        <div><strong>Target</strong><span>${escapeHtml(log.targetLabel || log.targetId || 'Unknown')}</span></div>
+      </div>
+      <div class="qd-admin-detail-stack">
+        ${summarizeActivityMetadata(log.metadata || {}).map((row) => `<div class="qd-admin-detail-value">${escapeHtml(row)}</div>`).join('')}
+      </div>
+    </article>
+  `).join('');
+};
+
+const renderActivityManager = () => {
+  const logs = getFilteredActivityLogs();
+  const actionOptions = ['All', ...Object.keys(activityActionLabels)];
+  const targetTypeOptions = ['All', ...Object.keys(activityTargetTypeLabels)];
+
+  return `
+    <section class="qd-admin-dashboard qd-admin-cards-dashboard">
+      ${state.activityError ? `<div class="qd-admin-alert" role="alert">${escapeHtml(state.activityError)}</div>` : ''}
+
+      <article class="qd-admin-card qd-admin-table-card">
+        <div class="qd-admin-section-head">
+          <div>
+            <div class="qd-eyebrow qd-admin-kicker">Admin Activity</div>
+            <h2>Audit trail</h2>
+            <p>Track which admin performed each meaningful action, when it happened, and what changed.</p>
+          </div>
+        </div>
+
+        <div class="qd-admin-toolbar qd-admin-filters" style="margin-bottom:20px">
+          <input class="qd-admin-input" type="search" placeholder="Search email, action, record label, or ID" data-activity-field="search" value="${escapeHtml(state.activityFilters.search)}">
+          <select class="qd-admin-select" data-activity-field="action">
+            ${actionOptions.map((option) => `
+              <option value="${escapeHtml(option)}" ${state.activityFilters.action === option ? 'selected' : ''}>${escapeHtml(option === 'All' ? 'All actions' : getActivityActionLabel(option))}</option>
+            `).join('')}
+          </select>
+          <select class="qd-admin-select" data-activity-field="targetType">
+            ${targetTypeOptions.map((option) => `
+              <option value="${escapeHtml(option)}" ${state.activityFilters.targetType === option ? 'selected' : ''}>${escapeHtml(option === 'All' ? 'All target types' : getActivityTargetTypeLabel(option))}</option>
+            `).join('')}
+          </select>
+        </div>
+
+        <div class="qd-admin-table-wrap">
+          <table class="qd-admin-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Admin</th>
+                <th>Action</th>
+                <th>Target Type</th>
+                <th>Target</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>${renderActivityRows(logs)}</tbody>
+          </table>
+        </div>
+
+        <div class="qd-admin-mobile-list">
+          ${renderActivityCards(logs)}
+        </div>
+      </article>
+    </section>
+  `;
+};
 
 const renderDetailItem = (label, value, options = {}) => {
   const formatted = formatValue(value, options);
@@ -1943,6 +2763,7 @@ const renderAppShell = (content) => {
       ${state.adminToast ? `<div class="qd-admin-toast" role="status" aria-live="polite">${escapeHtml(state.adminToast)}</div>` : ''}
       ${renderDrawer()}
       ${renderCardEditor()}
+      ${renderInvitationEditor()}
       ${renderQuoteDrawer()}
     </div>
   `;
@@ -1990,46 +2811,87 @@ const renderAccessDenied = () => renderAppShell(`
   <section class="qd-admin-loading">
     <div>
       <div class="qd-eyebrow qd-admin-kicker">Access control</div>
-      <h2>Signed in, but not allowed</h2>
-      <p>This page is ready for stricter admin-email allowlisting later. For now, update the allowlist in <code>admin.js</code> if you want to restrict access.</p>
+      <h2>Unauthorized access</h2>
+      <p>This account is not allowed to use the admin area.</p>
       <div class="qd-admin-alert is-soft">Current account: ${escapeHtml(state.user?.email || 'Unknown')}</div>
     </div>
   </section>
 `);
 
 const render = () => {
-  document.body.classList.toggle('qd-modal-open', Boolean(state.selectedId || state.cardEditor.open || state.quoteDrawer.open));
+  const nextModalOpen = Boolean(state.selectedId || state.cardEditor.open || state.invitationEditor.open || state.quoteDrawer.open);
+  if (nextModalOpen !== isModalOpen) {
+    document.body.classList.toggle('qd-modal-open', nextModalOpen);
+    isModalOpen = nextModalOpen;
+  }
 
   if (state.authLoading) {
     root.innerHTML = renderLoading('Authenticating', 'Checking your Firebase session and restoring persistence.');
+    syncActivitySubscriptions();
     return;
   }
 
   if (!state.user) {
     root.innerHTML = renderLogin();
     attachLoginFormListener();
+    syncActivitySubscriptions();
     return;
   }
 
   if (!isAllowedAdminUser(state.user)) {
     root.innerHTML = renderAccessDenied();
+    syncActivitySubscriptions();
     return;
   }
 
   if (state.dataLoading && state.submissions.length === 0) {
     root.innerHTML = renderLoading('Syncing submissions', 'Opening the realtime Firestore listener for projectSubmissions.');
+    syncActivitySubscriptions();
     return;
   }
 
-  root.innerHTML = renderAppShell(state.activeTab === 'cards' ? renderCardsManager() : renderDashboard());
+  const content = state.activeTab === 'cards'
+    ? renderCardsManager()
+    : state.activeTab === 'invitations'
+      ? renderInvitationsManager()
+    : state.activeTab === 'activity'
+      ? renderActivityManager()
+      : renderDashboard();
+  root.innerHTML = renderAppShell(content);
+  syncActivitySubscriptions();
 };
 
 const openSubmission = (id) => {
+  const submission = state.submissions.find((item) => item.id === id);
+  if (!submission) return;
+  const didChangeSelection = state.selectedId !== id;
   state.selectedId = id;
-  state.drawerDraft = null;
+  if (didChangeSelection) {
+    state.drawerDraft = createDrawerDraft(submission, state.drawerDraft || {});
+    state.submissionActivityLoading = true;
+    state.submissionActivityError = '';
+    state.submissionActivityLogs = [];
+  } else if (!state.drawerDraft || state.drawerDraft.id !== id) {
+    state.drawerDraft = createDrawerDraft(submission, state.drawerDraft || {});
+  }
   state.saveError = '';
   state.copyFeedback = '';
   render();
+
+  if (didChangeSelection) {
+    queueMicrotask(() => {
+      void logAdminActivity({
+      action: 'open_submission',
+      targetType: 'submission',
+      targetId: submission.id,
+      targetLabel: getSubmissionActivityLabel(submission),
+      metadata: {
+        status: submission.status || 'New',
+        priority: submission.priority || 'Normal'
+      }
+      });
+    });
+  }
 };
 
 const closeDrawer = () => {
@@ -2087,9 +2949,11 @@ const handleLogin = async (event) => {
   try {
     setLoginLoading(true);
     state.loginError = '';
+    state.pendingLoginAudit = true;
     await signInWithEmailAndPassword(auth, email, password);
     clearLoginError();
   } catch (error) {
+    state.pendingLoginAudit = false;
     console.error('Login failed:', error);
     showLoginError(error?.message || 'Login failed.');
   } finally {
@@ -2115,6 +2979,12 @@ const attachLoginFormListener = () => {
 
 const handleLogout = async () => {
   try {
+    await logAdminActivity({
+      action: 'logout',
+      targetType: 'session',
+      targetId: state.user?.uid || '',
+      targetLabel: state.user?.email || 'Admin session'
+    });
     await signOut(auth);
   } catch (error) {
     state.dataError = error?.message || 'Could not sign out right now.';
@@ -2207,6 +3077,461 @@ const subscribeToCards = () => {
   startListener(orderedQuery);
 };
 
+const subscribeToInvitations = () => {
+  if (unsubscribeInvitationsSnapshot) {
+    unsubscribeInvitationsSnapshot();
+    unsubscribeInvitationsSnapshot = null;
+  }
+
+  state.invitationsLoading = true;
+  state.invitationsError = '';
+  render();
+
+  const invitationsRef = collection(db, 'weddingInvitations');
+  const orderedQuery = query(invitationsRef, orderBy('createdAt', 'desc'));
+
+  const startListener = (source) => {
+    unsubscribeInvitationsSnapshot = onSnapshot(
+      source,
+      (snapshot) => {
+        state.invitations = snapshot.docs.map(hydrateInvitation);
+        state.invitationsLoading = false;
+        if (state.invitationEditor.open && state.invitationEditor.id) {
+          const fresh = state.invitations.find((item) => item.id === state.invitationEditor.id);
+          if (fresh && !state.invitationEditor.isSaving) {
+            state.invitationEditor.original = fresh;
+            if (!state.invitationEditor.pendingCoverFile && !state.invitationEditor.pendingMusicFile) {
+              state.invitationEditor.draft = {
+                ...createEmptyInvitationDraft(),
+                ...fresh
+              };
+            }
+          }
+        }
+        render();
+      },
+      (error) => {
+        if (source === orderedQuery) {
+          startListener(invitationsRef);
+          return;
+        }
+
+        state.invitationsLoading = false;
+        state.invitationsError = error?.message || 'Unable to read wedding invitations.';
+        render();
+      }
+    );
+  };
+
+  startListener(orderedQuery);
+};
+
+const getInvitationById = (id) => state.invitations.find((invitation) => invitation.id === id) || null;
+
+const stopInvitationRsvpsSubscription = () => {
+  if (unsubscribeInvitationRsvpsSnapshot) {
+    unsubscribeInvitationRsvpsSnapshot();
+    unsubscribeInvitationRsvpsSnapshot = null;
+  }
+  currentInvitationRsvpsTargetId = null;
+  state.invitationRsvpsLoading = false;
+  state.invitationRsvpsError = '';
+  state.invitationRsvps = [];
+};
+
+const subscribeToInvitationRsvps = (invitationId) => {
+  if (!invitationId) {
+    stopInvitationRsvpsSubscription();
+    return;
+  }
+  if (currentInvitationRsvpsTargetId === invitationId && unsubscribeInvitationRsvpsSnapshot) return;
+
+  state.invitationRsvpsLoading = true;
+  state.invitationRsvpsError = '';
+  state.invitationRsvps = [];
+  currentInvitationRsvpsTargetId = invitationId;
+
+  const rsvpRef = collection(db, 'weddingInvitations', invitationId, 'rsvps');
+  const rsvpQuery = query(rsvpRef, orderBy('createdAt', 'desc'), limit(100));
+  unsubscribeInvitationRsvpsSnapshot = onSnapshot(
+    rsvpQuery,
+    (snapshot) => {
+      state.invitationRsvps = snapshot.docs.map(hydrateInvitationRsvp);
+      state.invitationRsvpsLoading = false;
+      if (state.invitationEditor.open && state.invitationEditor.id === invitationId) render();
+    },
+    (error) => {
+      state.invitationRsvpsLoading = false;
+      state.invitationRsvpsError = error?.message || 'Unable to read invitation RSVPs.';
+      if (state.invitationEditor.open && state.invitationEditor.id === invitationId) render();
+    }
+  );
+};
+
+const openInvitationEditor = (mode, invitation = null) => {
+  const draft = invitation
+    ? { ...createEmptyInvitationDraft(), ...invitation }
+    : createEmptyInvitationDraft();
+
+  state.invitationEditor = {
+    open: true,
+    mode,
+    id: invitation?.id || null,
+    draft,
+    original: invitation ? { ...invitation } : null,
+    slugState: { status: 'idle', message: 'Use lowercase letters, numbers, and hyphens only.' },
+    slugTouched: Boolean(invitation?.slug),
+    isSaving: false,
+    error: '',
+    pendingCoverFile: null,
+    pendingMusicFile: null
+  };
+
+  if (invitation?.id) {
+    subscribeToInvitationRsvps(invitation.id);
+  } else {
+    stopInvitationRsvpsSubscription();
+  }
+
+  render();
+};
+
+const closeInvitationEditor = () => {
+  state.invitationEditor = {
+    open: false,
+    mode: 'create',
+    id: null,
+    draft: null,
+    original: null,
+    slugState: { status: 'idle', message: '' },
+    slugTouched: false,
+    isSaving: false,
+    error: '',
+    pendingCoverFile: null,
+    pendingMusicFile: null
+  };
+  stopInvitationRsvpsSubscription();
+  render();
+};
+
+const captureInvitationDraftFromDom = () => {
+  const form = document.getElementById('invitation-editor-form');
+  if (!form) return getInvitationEditorDraftFromState();
+
+  const rawStatus = form.querySelector('[name="status"]')?.value || 'draft';
+  const normalizedStatus = INVITE_STATUS_OPTIONS.includes(rawStatus) ? rawStatus : 'draft';
+  return {
+    ...getInvitationEditorDraftFromState(),
+    brideName: form.querySelector('[name="brideName"]')?.value?.trim() || '',
+    groomName: form.querySelector('[name="groomName"]')?.value?.trim() || '',
+    eventTitle: form.querySelector('[name="eventTitle"]')?.value?.trim() || 'Wedding Invitation',
+    slug: slugifyCardValue(form.querySelector('[name="slug"]')?.value || ''),
+    eventDate: form.querySelector('[name="eventDate"]')?.value || '',
+    eventTime: form.querySelector('[name="eventTime"]')?.value || '',
+    venueName: form.querySelector('[name="venueName"]')?.value?.trim() || '',
+    venueAddress: form.querySelector('[name="venueAddress"]')?.value?.trim() || '',
+    mapUrl: form.querySelector('[name="mapUrl"]')?.value?.trim() || '',
+    languageDefault: form.querySelector('[name="languageDefault"]')?.value === 'ar' ? 'ar' : 'en',
+    theme: INVITE_THEME_OPTIONS.includes(form.querySelector('[name="theme"]')?.value) ? form.querySelector('[name="theme"]')?.value : 'royal-gold',
+    whatsappNumber: normalizeWhatsappAdminNumber(form.querySelector('[name="whatsappNumber"]')?.value || ''),
+    rsvpEnabled: Boolean(form.querySelector('[name="rsvpEnabled"]')?.checked),
+    active: normalizedStatus === 'active',
+    status: normalizedStatus,
+    coupleDisplayName: form.querySelector('[name="coupleDisplayName"]')?.value?.trim() || ''
+  };
+};
+
+const ensureInvitationEditorData = () => {
+  const draft = captureInvitationDraftFromDom();
+  draft.coupleDisplayName = draft.coupleDisplayName || deriveInvitationDisplayName(draft);
+  state.invitationEditor.draft = draft;
+  return draft;
+};
+
+const writeInvitationPreviewUrl = (slug) => {
+  const preview = document.getElementById('invitation-preview-url');
+  if (preview) preview.textContent = buildInvitationPreviewUrl(slug);
+};
+
+const setInvitationSlugState = (status, message) => {
+  state.invitationEditor.slugState = { status, message };
+  const hint = document.getElementById('invite-slug-hint');
+  const input = document.getElementById('invite-slug');
+  if (hint) hint.textContent = message;
+  if (input) {
+    input.classList.remove('is-valid', 'is-invalid');
+    if (status === 'valid') input.classList.add('is-valid');
+    if (status === 'invalid') input.classList.add('is-invalid');
+  }
+};
+
+const validateInvitationSlug = async (slug, { silent = false } = {}) => {
+  const normalized = slugifyCardValue(slug);
+  if (!normalized) {
+    if (!silent) setInvitationSlugState('invalid', 'Enter a URL-safe slug for this invitation.');
+    return false;
+  }
+
+  if (normalized !== slug) {
+    if (!silent) setInvitationSlugState('invalid', 'Slug must use lowercase letters, numbers, and hyphens only.');
+    return false;
+  }
+
+  if (!silent) setInvitationSlugState('checking', 'Checking slug availability...');
+  const invitationsRef = collection(db, 'weddingInvitations');
+  const slugQuery = query(invitationsRef, where('slug', '==', normalized), limit(2));
+  const snapshot = await getDocs(slugQuery);
+  const conflict = snapshot.docs.find((item) => item.id !== state.invitationEditor.id);
+
+  if (conflict) {
+    if (!silent) setInvitationSlugState('invalid', 'That invitation link is already taken.');
+    return false;
+  }
+
+  if (!silent) setInvitationSlugState('valid', 'Invitation link is available.');
+  return true;
+};
+
+const getSafeFileExtension = (file, fallback) => {
+  const fromName = String(file?.name || '').split('.').pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName;
+  const fromType = String(file?.type || '').split('/').pop()?.toLowerCase();
+  if (fromType && /^[a-z0-9.+-]{2,12}$/.test(fromType)) return fromType.replace('mpeg', 'mp3').replace('jpeg', 'jpg');
+  return fallback;
+};
+
+const uploadInvitationCoverIfNeeded = async (draft) => {
+  const file = state.invitationEditor.pendingCoverFile;
+  if (!file) {
+    return {
+      coverImageUrl: draft.coverImageUrl || '',
+      coverImageStoragePath: draft.coverImageStoragePath || ''
+    };
+  }
+
+  const ext = getSafeFileExtension(file, 'jpg');
+  const path = `invitations/${draft.slug}/cover.${ext}`;
+  const ref = storageRef(storage, path);
+  await uploadBytes(ref, file);
+  const url = await getDownloadURL(ref);
+  return { coverImageUrl: url, coverImageStoragePath: path };
+};
+
+const uploadInvitationMusicIfNeeded = async (draft) => {
+  const file = state.invitationEditor.pendingMusicFile;
+  if (!file) {
+    return {
+      musicUrl: draft.musicUrl || '',
+      musicStoragePath: draft.musicStoragePath || ''
+    };
+  }
+
+  const ext = getSafeFileExtension(file, 'mp3');
+  const path = `invitations/${draft.slug}/music.${ext}`;
+  const ref = storageRef(storage, path);
+  await uploadBytes(ref, file);
+  const url = await getDownloadURL(ref);
+  return { musicUrl: url, musicStoragePath: path };
+};
+
+const deleteStoragePathIfPresent = async (path) => {
+  if (!path) return;
+  try {
+    await deleteObject(storageRef(storage, path));
+  } catch (error) {
+    console.warn('[invitation-media] cleanup skipped:', error?.message || error);
+  }
+};
+
+const saveInvitationEditor = async () => {
+  const draft = ensureInvitationEditorData();
+
+  if (!draft.brideName || !draft.groomName || !draft.slug || !draft.eventDate || !draft.venueName) {
+    state.invitationEditor.error = 'Bride name, groom name, slug, event date, and venue name are required.';
+    render();
+    return;
+  }
+
+  const isSlugValid = await validateInvitationSlug(draft.slug, { silent: false });
+  if (!isSlugValid) return;
+
+  state.invitationEditor.isSaving = true;
+  state.invitationEditor.error = '';
+  render();
+
+  try {
+    const previous = state.invitationEditor.original || {};
+    const coverPayload = await uploadInvitationCoverIfNeeded(draft);
+    const musicPayload = await uploadInvitationMusicIfNeeded(draft);
+    const payload = {
+      slug: draft.slug,
+      brideName: draft.brideName,
+      groomName: draft.groomName,
+      coupleDisplayName: draft.coupleDisplayName || deriveInvitationDisplayName(draft),
+      eventTitle: draft.eventTitle || 'Wedding Invitation',
+      eventDate: draft.eventDate,
+      eventTime: draft.eventTime || '',
+      venueName: draft.venueName,
+      venueAddress: draft.venueAddress || '',
+      mapUrl: draft.mapUrl || '',
+      languageDefault: draft.languageDefault === 'ar' ? 'ar' : 'en',
+      theme: INVITE_THEME_OPTIONS.includes(draft.theme) ? draft.theme : 'royal-gold',
+      coverImageUrl: coverPayload.coverImageUrl,
+      coverImageStoragePath: coverPayload.coverImageStoragePath,
+      musicUrl: musicPayload.musicUrl,
+      musicStoragePath: musicPayload.musicStoragePath,
+      rsvpEnabled: draft.rsvpEnabled !== false,
+      whatsappNumber: draft.whatsappNumber || '',
+      active: draft.status === 'active',
+      status: draft.status,
+      views: Number(previous.views || draft.views || 0),
+      rsvpCount: Number(previous.rsvpCount || draft.rsvpCount || 0),
+      createdBy: previous.createdBy || state.user?.email || '',
+      updatedAt: serverTimestamp()
+    };
+
+    if (state.invitationEditor.mode === 'edit' && state.invitationEditor.id) {
+      await updateDoc(doc(db, 'weddingInvitations', state.invitationEditor.id), payload);
+      if (state.invitationEditor.pendingCoverFile && previous.coverImageStoragePath && previous.coverImageStoragePath !== payload.coverImageStoragePath) {
+        await deleteStoragePathIfPresent(previous.coverImageStoragePath);
+      }
+      if (state.invitationEditor.pendingMusicFile && previous.musicStoragePath && previous.musicStoragePath !== payload.musicStoragePath) {
+        await deleteStoragePathIfPresent(previous.musicStoragePath);
+      }
+      showAdminToast(`Saved invitation ${payload.slug}`);
+    } else {
+      await addDoc(collection(db, 'weddingInvitations'), {
+        ...payload,
+        createdAt: serverTimestamp()
+      });
+      showAdminToast(`Created invitation ${payload.slug}`);
+    }
+
+    closeInvitationEditor();
+  } catch (error) {
+    state.invitationEditor.isSaving = false;
+    state.invitationEditor.error = error?.message || 'Could not save the wedding invitation.';
+    render();
+  }
+};
+
+const copyInvitationLink = async (invitation) => {
+  await navigator.clipboard.writeText(getInvitePublicUrl(invitation.slug));
+  showAdminToast('Invitation link copied.');
+};
+
+const previewInvitation = (invitation) => {
+  window.open(getInvitePublicUrl(invitation.slug), '_blank', 'noopener,noreferrer');
+};
+
+const shareInvitationWhatsapp = (invitation) => {
+  window.open(buildInvitationWhatsappShareUrl(invitation), '_blank', 'noopener,noreferrer');
+};
+
+const deleteInvitationRecord = async (invitation) => {
+  const confirmed = window.confirm(`Delete the wedding invitation for ${deriveInvitationDisplayName(invitation) || invitation.slug}?`);
+  if (!confirmed) return;
+  await deleteDoc(doc(db, 'weddingInvitations', invitation.id));
+  await deleteStoragePathIfPresent(invitation.coverImageStoragePath);
+  await deleteStoragePathIfPresent(invitation.musicStoragePath);
+  showAdminToast(`Deleted invitation ${invitation.slug}`);
+};
+
+const stopActivityLogsSubscription = () => {
+  if (unsubscribeActivityLogsSnapshot) {
+    unsubscribeActivityLogsSnapshot();
+    unsubscribeActivityLogsSnapshot = null;
+  }
+  state.activityLoading = false;
+};
+
+const subscribeToActivityLogs = () => {
+  if (unsubscribeActivityLogsSnapshot) return;
+  state.activityLoading = true;
+  state.activityError = '';
+  const activityRef = collection(db, 'adminActivityLogs');
+  const activityQuery = query(activityRef, orderBy('timestamp', 'desc'), limit(250));
+  unsubscribeActivityLogsSnapshot = onSnapshot(
+    activityQuery,
+    (snapshot) => {
+      state.activityLogs = snapshot.docs.map(hydrateActivityLog);
+      state.activityLoading = false;
+      if (state.activeTab === 'activity') render();
+    },
+    (error) => {
+      state.activityLoading = false;
+      state.activityError = error?.message || 'Unable to read admin activity logs.';
+      if (state.activeTab === 'activity') render();
+    }
+  );
+};
+
+const stopSubmissionActivitySubscription = () => {
+  if (unsubscribeSubmissionActivitySnapshot) {
+    unsubscribeSubmissionActivitySnapshot();
+    unsubscribeSubmissionActivitySnapshot = null;
+  }
+  currentSubmissionActivityTargetId = null;
+  state.submissionActivityLoading = false;
+  state.submissionActivityError = '';
+  state.submissionActivityLogs = [];
+};
+
+const subscribeToSubmissionActivity = (submissionId) => {
+  if (!submissionId) {
+    stopSubmissionActivitySubscription();
+    return;
+  }
+  if (currentSubmissionActivityTargetId === submissionId && unsubscribeSubmissionActivitySnapshot) {
+    return;
+  }
+  state.submissionActivityLoading = true;
+  state.submissionActivityError = '';
+  const logsRef = collection(db, 'adminActivityLogs');
+  const submissionQuery = query(logsRef, where('targetId', '==', submissionId), limit(100));
+  if (unsubscribeSubmissionActivitySnapshot) {
+    unsubscribeSubmissionActivitySnapshot();
+    unsubscribeSubmissionActivitySnapshot = null;
+  }
+  currentSubmissionActivityTargetId = submissionId;
+  unsubscribeSubmissionActivitySnapshot = onSnapshot(
+    submissionQuery,
+    (snapshot) => {
+      state.submissionActivityLogs = snapshot.docs
+        .map(hydrateActivityLog)
+        .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+        .slice(0, 50);
+      state.submissionActivityLoading = false;
+      if (state.selectedId === submissionId) render();
+    },
+    (error) => {
+      state.submissionActivityLoading = false;
+      state.submissionActivityError = error?.message || 'Unable to read submission activity.';
+      if (state.selectedId === submissionId) render();
+    }
+  );
+};
+
+const syncActivitySubscriptions = () => {
+  if (!state.user || !isAllowedAdminUser(state.user)) {
+    stopActivityLogsSubscription();
+    stopSubmissionActivitySubscription();
+    return;
+  }
+
+  if (state.activeTab === 'activity') {
+    subscribeToActivityLogs();
+  } else {
+    stopActivityLogsSubscription();
+  }
+
+  if (state.selectedId) {
+    subscribeToSubmissionActivity(state.selectedId);
+  } else {
+    stopSubmissionActivitySubscription();
+  }
+};
+
 const getCardById = (id) => state.cards.find((card) => card.id === id) || null;
 
 const openCardEditor = (mode, card = null) => {
@@ -2223,6 +3548,7 @@ const openCardEditor = (mode, card = null) => {
     mode,
     id: card?.id || null,
     draft,
+    original: card ? deepCloneForLog(getSmartCardLogState(card)) : null,
     slugState: { status: 'idle', message: 'Use lowercase letters, numbers, and hyphens only.' },
     slugTouched: Boolean(card?.slug),
     isSaving: false,
@@ -2230,6 +3556,18 @@ const openCardEditor = (mode, card = null) => {
     pendingAvatarFile: null
   };
   render();
+  if (mode === 'edit' && card?.id) {
+    logAdminActivity({
+      action: 'open_smart_card',
+      targetType: 'smart_card',
+      targetId: card.id,
+      targetLabel: getSmartCardActivityLabel(card),
+      metadata: {
+        slug: card.slug || '',
+        active: card.active !== false
+      }
+    });
+  }
 };
 
 const closeCardEditor = () => {
@@ -2238,6 +3576,7 @@ const closeCardEditor = () => {
     mode: 'create',
     id: null,
     draft: null,
+    original: null,
     slugState: { status: 'idle', message: '' },
     slugTouched: false,
     isSaving: false,
@@ -2365,6 +3704,7 @@ const ensureCardEditorData = () => {
 
 const saveCardEditor = async () => {
   const draft = ensureCardEditorData();
+  const previousCardState = state.cardEditor.original || null;
 
   if (!draft.name || !draft.slug || !draft.phone || !draft.email) {
     state.cardEditor.error = 'Name, slug, phone, and email are required.';
@@ -2401,11 +3741,32 @@ const saveCardEditor = async () => {
 
     if (state.cardEditor.mode === 'edit' && state.cardEditor.id) {
       await updateDoc(doc(db, 'cards', state.cardEditor.id), payload);
+      const nextCardState = getSmartCardLogState(payload);
+      const changeSet = buildChangedMetadata(previousCardState || {}, nextCardState);
+      if (changeSet.changedFields.length) {
+        await logAdminActivity({
+          action: 'edit_smart_card',
+          targetType: 'smart_card',
+          targetId: state.cardEditor.id,
+          targetLabel: draft.name || draft.slug || state.cardEditor.id,
+          metadata: changeSet
+        });
+      }
       showAdminToast(`Saved ${draft.slug}`);
     } else {
-      await addDoc(collection(db, 'cards'), {
+      const cardRef = await addDoc(collection(db, 'cards'), {
         ...payload,
         createdAt: serverTimestamp()
+      });
+      await logAdminActivity({
+        action: 'create_smart_card',
+        targetType: 'smart_card',
+        targetId: cardRef.id,
+        targetLabel: draft.name || draft.slug || cardRef.id,
+        metadata: {
+          changedFields: Object.keys(getSmartCardLogState(payload)),
+          after: getSmartCardLogState(payload)
+        }
       });
       showAdminToast(`Created ${draft.slug}`);
     }
@@ -2485,6 +3846,17 @@ const toggleCardActive = async (card) => {
     active: card.active === false,
     updatedAt: serverTimestamp()
   });
+  await logAdminActivity({
+    action: 'edit_smart_card',
+    targetType: 'smart_card',
+    targetId: card.id,
+    targetLabel: getSmartCardActivityLabel(card),
+    metadata: {
+      changedFields: ['active'],
+      before: { active: card.active !== false },
+      after: { active: card.active === false }
+    }
+  });
   showAdminToast(card.active === false ? `Activated ${card.slug}` : `Deactivated ${card.slug}`);
 };
 
@@ -2493,6 +3865,15 @@ const deleteCardRecord = async (card) => {
   if (!confirmed) return;
   await deleteDoc(doc(db, 'cards', card.id));
   await deleteCardAvatarIfNeeded(card);
+  await logAdminActivity({
+    action: 'delete_smart_card',
+    targetType: 'smart_card',
+    targetId: card.id,
+    targetLabel: getSmartCardActivityLabel(card),
+    metadata: {
+      before: getSmartCardLogState(card)
+    }
+  });
   showAdminToast(`Deleted ${card.slug}`);
 };
 
@@ -2503,7 +3884,7 @@ const seedQdCard = async () => {
     return;
   }
 
-  await addDoc(collection(db, 'cards'), {
+  const seededPayload = {
     slug: 'qd',
     name: 'QD SYSTEMS',
     role: 'Digital Systems Agency',
@@ -2523,6 +3904,18 @@ const seedQdCard = async () => {
     views: 0,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
+  };
+  const cardRef = await addDoc(collection(db, 'cards'), seededPayload);
+  await logAdminActivity({
+    action: 'create_smart_card',
+    targetType: 'smart_card',
+    targetId: cardRef.id,
+    targetLabel: seededPayload.name,
+    metadata: {
+      source: 'seed',
+      changedFields: Object.keys(getSmartCardLogState(seededPayload)),
+      after: getSmartCardLogState(seededPayload)
+    }
   });
   showAdminToast('Seed card created.');
 };
@@ -2531,6 +3924,8 @@ const saveDrawer = async (nextValues = {}) => {
   const selected = getSelectedSubmission();
   if (!selected) return;
   const previousStatus = selected.status ?? 'New';
+  const previousPriority = selected.priority ?? 'Normal';
+  const beforeState = getSubmissionLogState(selected);
 
   const nextAnswers = { ...(selected.answers || {}) };
   for (const field of editableSubmissionFields) {
@@ -2559,12 +3954,53 @@ const saveDrawer = async (nextValues = {}) => {
 
   try {
     await updateDoc(doc(db, 'projectSubmissions', selected.id), payload);
+    const afterState = getSubmissionLogState({
+      ...selected,
+      ...payload,
+      answers: payload.answers
+    });
+    const changeSet = buildChangedMetadata(beforeState, afterState);
     state.drawerDraft = {
       ...(state.drawerDraft || createDrawerDraft(selected)),
       ...payload,
       editMode: false,
       lastUpdatedAt: undefined
     };
+    if (changeSet.changedFields.length) {
+      await logAdminActivity({
+        action: 'edit_submission',
+        targetType: 'submission',
+        targetId: selected.id,
+        targetLabel: getSubmissionActivityLabel({ ...selected, ...payload, answers: payload.answers }),
+        metadata: changeSet
+      });
+    }
+    if (payload.status !== previousStatus) {
+      await logAdminActivity({
+        action: 'change_status',
+        targetType: 'submission',
+        targetId: selected.id,
+        targetLabel: getSubmissionActivityLabel(selected),
+        metadata: {
+          changedFields: ['status'],
+          before: { status: previousStatus },
+          after: { status: payload.status }
+        }
+      });
+    }
+    if (payload.priority !== previousPriority) {
+      await logAdminActivity({
+        action: 'change_priority',
+        targetType: 'submission',
+        targetId: selected.id,
+        targetLabel: getSubmissionActivityLabel(selected),
+        metadata: {
+          changedFields: ['priority'],
+          before: { priority: previousPriority },
+          after: { priority: payload.priority }
+        }
+      });
+    }
     if (payload.status !== previousStatus) {
       showAdminToast(`Status changed to ${payload.status}`);
     }
@@ -2589,6 +4025,10 @@ const handleDocumentClick = async (event) => {
 
   if (action === 'set-admin-tab') {
     state.activeTab = actionTarget.dataset.tab || 'dashboard';
+    if (state.activeTab === 'activity') {
+      state.activityLoading = true;
+      state.activityError = '';
+    }
     syncAdminTabUrl();
     render();
     return;
@@ -2649,8 +4089,18 @@ const handleDocumentClick = async (event) => {
     return;
   }
 
+  if (action === 'open-invitation-create') {
+    openInvitationEditor('create');
+    return;
+  }
+
   if (action === 'close-card-editor') {
     closeCardEditor();
+    return;
+  }
+
+  if (action === 'close-invitation-editor') {
+    closeInvitationEditor();
     return;
   }
 
@@ -2658,6 +4108,13 @@ const handleDocumentClick = async (event) => {
     const card = getCardById(actionTarget.dataset.id);
     if (!card) return;
     openCardEditor('edit', card);
+    return;
+  }
+
+  if (action === 'edit-invitation') {
+    const invitation = getInvitationById(actionTarget.dataset.id);
+    if (!invitation) return;
+    openInvitationEditor('edit', invitation);
     return;
   }
 
@@ -2692,6 +4149,20 @@ const handleDocumentClick = async (event) => {
     return;
   }
 
+  if (action === 'copy-invitation-link') {
+    const invitation = getInvitationById(actionTarget.dataset.id);
+    if (!invitation) return;
+    await copyInvitationLink(invitation);
+    return;
+  }
+
+  if (action === 'copy-invitation-preview') {
+    const slug = slugifyCardValue(document.getElementById('invite-slug')?.value || state.invitationEditor.draft?.slug || '');
+    await navigator.clipboard.writeText(buildInvitationPreviewUrl(slug));
+    showAdminToast('Invitation link copied.');
+    return;
+  }
+
   if (action === 'download-card-qr') {
     const card = getCardById(actionTarget.dataset.id);
     if (!card) return;
@@ -2710,6 +4181,33 @@ const handleDocumentClick = async (event) => {
     const card = getCardById(actionTarget.dataset.id);
     if (!card) return;
     await deleteCardRecord(card);
+    return;
+  }
+
+  if (action === 'delete-invitation') {
+    const invitation = getInvitationById(actionTarget.dataset.id);
+    if (!invitation) return;
+    await deleteInvitationRecord(invitation);
+    return;
+  }
+
+  if (action === 'preview-invitation') {
+    const invitation = getInvitationById(actionTarget.dataset.id);
+    if (!invitation) return;
+    previewInvitation(invitation);
+    return;
+  }
+
+  if (action === 'preview-invitation-draft') {
+    const draft = ensureInvitationEditorData();
+    previewInvitation({ slug: draft.slug });
+    return;
+  }
+
+  if (action === 'share-invitation-whatsapp') {
+    const invitation = getInvitationById(actionTarget.dataset.id);
+    if (!invitation) return;
+    shareInvitationWhatsapp(invitation);
     return;
   }
 
@@ -2847,6 +4345,35 @@ const handleDocumentInput = (event) => {
     }
   }
 
+  if (state.invitationEditor.open) {
+    if (event.target.id === 'invite-bride-name' || event.target.id === 'invite-groom-name') {
+      if (!state.invitationEditor.slugTouched) {
+        const bride = document.getElementById('invite-bride-name')?.value || '';
+        const groom = document.getElementById('invite-groom-name')?.value || '';
+        const slugInput = document.getElementById('invite-slug');
+        if (slugInput) {
+          slugInput.value = slugifyCardValue(`${bride}-${groom}`);
+          writeInvitationPreviewUrl(slugInput.value);
+        }
+      }
+      return;
+    }
+
+    if (event.target.id === 'invite-slug') {
+      state.invitationEditor.slugTouched = true;
+      const nextSlug = slugifyCardValue(event.target.value);
+      if (nextSlug !== event.target.value) event.target.value = nextSlug;
+      writeInvitationPreviewUrl(nextSlug);
+      setInvitationSlugState('idle', 'Use lowercase letters, numbers, and hyphens only.');
+      return;
+    }
+
+    if (event.target.id === 'invite-whatsapp') {
+      event.target.value = normalizeWhatsappAdminNumber(event.target.value);
+      return;
+    }
+  }
+
   const filterField = event.target.dataset.field;
   if (filterField) {
     if (filterField === 'status') {
@@ -2863,6 +4390,23 @@ const handleDocumentInput = (event) => {
     render();
     if (filterField === 'search') {
       const nextInput = root.querySelector('[data-field="search"]');
+      if (nextInput) {
+        nextInput.focus();
+        const caret = typeof selectionStart === 'number' ? selectionStart : value.length;
+        const caretEnd = typeof selectionEnd === 'number' ? selectionEnd : value.length;
+        nextInput.setSelectionRange(caret, caretEnd);
+      }
+    }
+    return;
+  }
+
+  const activityField = event.target.dataset.activityField;
+  if (activityField) {
+    const { selectionStart, selectionEnd, value } = event.target;
+    state.activityFilters[activityField] = event.target.value;
+    render();
+    if (activityField === 'search') {
+      const nextInput = root.querySelector('[data-activity-field="search"]');
       if (nextInput) {
         nextInput.focus();
         const caret = typeof selectionStart === 'number' ? selectionStart : value.length;
@@ -2919,6 +4463,49 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('change', (event) => {
+  if (event.target.dataset.activityField || event.target.dataset.field) {
+    handleDocumentInput(event);
+    return;
+  }
+
+  if (event.target.id === 'invite-cover-image') {
+    state.invitationEditor.pendingCoverFile = event.target.files?.[0] || null;
+    const hint = event.target.closest('.qd-admin-field')?.querySelector('.qd-admin-field-hint');
+    if (hint) {
+      hint.textContent = state.invitationEditor.pendingCoverFile?.name || state.invitationEditor.draft?.coverImageUrl || 'Uploads to Firebase Storage at invitations/[slug]/cover.*';
+    }
+    return;
+  }
+
+  if (event.target.id === 'invite-music-file') {
+    state.invitationEditor.pendingMusicFile = event.target.files?.[0] || null;
+    const hint = event.target.closest('.qd-admin-field')?.querySelector('.qd-admin-field-hint');
+    if (hint) {
+      hint.textContent = state.invitationEditor.pendingMusicFile?.name || state.invitationEditor.draft?.musicUrl || 'Uploads to Firebase Storage at invitations/[slug]/music.*';
+    }
+    return;
+  }
+
+  if (event.target.id === 'invite-slug') {
+    validateInvitationSlug(event.target.value).catch((error) => {
+      setInvitationSlugState('invalid', error?.message || 'Slug check failed.');
+    });
+    return;
+  }
+
+  if (event.target.id === 'invite-active') {
+    const status = document.getElementById('invite-status');
+    if (status && event.target.checked) status.value = 'active';
+    if (status && !event.target.checked && status.value === 'active') status.value = 'draft';
+    return;
+  }
+
+  if (event.target.id === 'invite-status') {
+    const activeToggle = document.getElementById('invite-active');
+    if (activeToggle) activeToggle.checked = event.target.value === 'active';
+    return;
+  }
+
   if (event.target.id === 'card-avatar') {
     state.cardEditor.pendingAvatarFile = event.target.files?.[0] || null;
     const hint = event.target.closest('.qd-admin-field')?.querySelector('.qd-admin-field-hint');
@@ -2953,10 +4540,18 @@ document.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveCardEditor();
   }
+  if (event.target.id === 'invitation-editor-form') {
+    event.preventDefault();
+    await saveInvitationEditor();
+  }
 });
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
+    if (state.invitationEditor.open) {
+      closeInvitationEditor();
+      return;
+    }
     if (state.cardEditor.open) {
       closeCardEditor();
       return;
@@ -2995,6 +4590,7 @@ const subscribeToQuotes = () => {
         const fresh = Object.values(map).find((q) => q.id === state.quoteDrawer.quote.id);
         if (fresh && !state.quoteDrawer.dirty) {
           state.quoteDrawer.quote = { ...fresh, lineItems: [...(fresh.lineItems || [])] };
+          state.quoteDrawer.original = deepCloneForLog(getQuoteLogState(fresh));
         }
       }
       render();
@@ -3052,6 +4648,18 @@ const openQuoteFromSubmission = async (submissionId) => {
     }
     const created = await res.json();
     state.quotesBySubmissionId[submissionId] = created;
+    const submission = state.submissions.find((item) => item.id === submissionId) || null;
+    await logAdminActivity({
+      action: 'create_quote',
+      targetType: 'quote',
+      targetId: submissionId,
+      targetLabel: created.quoteNumber || getSubmissionActivityLabel(submission),
+      metadata: {
+        quoteId: created.id,
+        submissionId,
+        submissionLabel: submission ? getSubmissionActivityLabel(submission) : submissionId
+      }
+    });
     openQuoteDrawer(created);
   } catch (e) {
     console.error('[quote-create] error:', e);
@@ -3073,6 +4681,7 @@ const openQuoteDrawer = (quote) => {
       lineItems: [...(quote.lineItems || [])],
       pages: { ...(quote.pages || {}), price: Number(quote.pages?.price) || 0 }
     },
+    original: deepCloneForLog(getQuoteLogState(quote)),
     dirty: false
   };
   render();
@@ -3082,7 +4691,7 @@ const closeQuoteDrawer = ({ autosave = true } = {}) => {
   if (autosave && state.quoteDrawer.dirty) {
     saveQuoteDrawer({ markSent: false, copy: false, silent: true });
   }
-  state.quoteDrawer = { open: false, quote: null, dirty: false };
+  state.quoteDrawer = { open: false, quote: null, original: null, dirty: false };
   render();
 };
 
@@ -3131,6 +4740,7 @@ const updateQuoteTotalsPreview = () => {
 const saveQuoteDrawer = async ({ markSent = false, copy = false, silent = false } = {}) => {
   const q = state.quoteDrawer.quote;
   if (!q) return;
+  const beforeState = state.quoteDrawer.original || getQuoteLogState(q);
   try {
     const user = auth.currentUser;
     if (!user) { if (!silent) showToast('Not signed in.'); return; }
@@ -3159,6 +4769,23 @@ const saveQuoteDrawer = async ({ markSent = false, copy = false, silent = false 
       return;
     }
     state.quoteDrawer.dirty = false;
+    const afterState = getQuoteLogState(q);
+    const changeSet = buildChangedMetadata(beforeState, afterState);
+    if (changeSet.changedFields.length || markSent) {
+      await logAdminActivity({
+        action: 'update_quote',
+        targetType: 'quote',
+        targetId: q.submissionId || q.id,
+        targetLabel: q.quoteNumber || q.id,
+        metadata: {
+          ...changeSet,
+          quoteId: q.id,
+          submissionId: q.submissionId || '',
+          markSent
+        }
+      });
+    }
+    state.quoteDrawer.original = deepCloneForLog(afterState);
     if (copy) {
       const url = `${location.origin}/q/${q.id}`;
       const text = `Your quotation from QD Systems:\n${url}\nPasscode: ${q._passcodePlain || '(check admin)'}`;
@@ -3282,18 +4909,35 @@ const renderQuoteDrawer = () => {
 
 await setPersistence(auth, browserLocalPersistence).catch(() => {});
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
+  console.log('Admin auth check:', user?.email);
   state.authLoading = false;
-  state.user = user;
   state.loginError = '';
   state.selectedId = null;
   state.drawerDraft = null;
   state.saveError = '';
+  state.user = user;
+
+  if (user && !isAllowedAdminUser(user)) {
+    state.pendingLoginAudit = false;
+    state.user = null;
+    state.loginError = unauthorizedAdminMessage;
+  }
 
   if (user && isAllowedAdminUser(user)) {
     subscribeToSubmissions();
     subscribeToQuotes();
     subscribeToCards();
+    subscribeToInvitations();
+    if (state.pendingLoginAudit) {
+      await logAdminActivity({
+        action: 'login',
+        targetType: 'session',
+        targetId: user.uid,
+        targetLabel: user.email || 'Admin session'
+      });
+      state.pendingLoginAudit = false;
+    }
   } else {
     if (unsubscribeSnapshot) {
       unsubscribeSnapshot();
@@ -3307,26 +4951,60 @@ onAuthStateChanged(auth, (user) => {
       unsubscribeCardsSnapshot();
       unsubscribeCardsSnapshot = null;
     }
+    if (unsubscribeInvitationsSnapshot) {
+      unsubscribeInvitationsSnapshot();
+      unsubscribeInvitationsSnapshot = null;
+    }
     state.submissions = [];
     state.cards = [];
+    state.invitations = [];
+    state.invitationRsvps = [];
+    state.activityLogs = [];
+    state.submissionActivityLogs = [];
     state.quotesBySubmissionId = {};
-    state.quoteDrawer = { open: false, quote: null, dirty: false };
+    state.quoteDrawer = { open: false, quote: null, original: null, dirty: false };
     state.cardEditor = {
       open: false,
       mode: 'create',
       id: null,
       draft: null,
+      original: null,
       slugState: { status: 'idle', message: '' },
       slugTouched: false,
       isSaving: false,
       error: '',
       pendingAvatarFile: null
     };
+    state.invitationEditor = {
+      open: false,
+      mode: 'create',
+      id: null,
+      draft: null,
+      original: null,
+      slugState: { status: 'idle', message: '' },
+      slugTouched: false,
+      isSaving: false,
+      error: '',
+      pendingCoverFile: null,
+      pendingMusicFile: null
+    };
     state.dataLoading = false;
     state.cardsLoading = false;
+    state.invitationsLoading = false;
+    state.invitationRsvpsLoading = false;
+    state.activityLoading = false;
+    state.submissionActivityLoading = false;
   }
 
   render();
+
+  if (user && !isAllowedAdminUser(user)) {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Unauthorized admin sign-out failed:', error);
+    }
+  }
 });
 
 render();

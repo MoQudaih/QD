@@ -1,5 +1,337 @@
-const { useState, useEffect } = React;
-const { Reveal, Eyebrow, Tag, ChatbotWindow, DashboardMini, BrowserMini, CodeBlock, useViewportFlag, usePrefersReducedMotion } = window.__QD;
+const { useState, useEffect, useRef } = React;
+const { Reveal, Eyebrow, Tag, ChatbotWindow, DashboardMini, CodeBlock, useViewportFlag, usePrefersReducedMotion } = window.__QD;
+
+const AnimatedBrowserMini = () => {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const [phase, setPhase] = useState(prefersReducedMotion ? 1 : 0);
+  const [phaseProgress, setPhaseProgress] = useState(prefersReducedMotion ? 1 : 0);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [counter, setCounter] = useState(12);
+  const [counterBump, setCounterBump] = useState(false);
+  const phaseStartRef = useRef(performance.now());
+  const bumpTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setPhase(1);
+      setPhaseProgress(1);
+      setScanProgress(1);
+      setCounter(12);
+      return;
+    }
+
+    const phaseDurations = [1500, 2000, 2000];
+    phaseStartRef.current = performance.now();
+    setCounter(12);
+
+    const interval = setInterval(() => {
+      const now = performance.now();
+      const elapsed = now - phaseStartRef.current;
+      const currentDuration = phaseDurations[phase];
+
+      if (elapsed >= currentDuration) {
+        const nextPhase = (phase + 1) % 3;
+        phaseStartRef.current = now;
+        setPhase(nextPhase);
+        setPhaseProgress(0);
+
+        if (phase === 2 && nextPhase === 0) {
+          setCounter(12);
+          setCounterBump(false);
+        }
+      }
+    }, 60);
+
+    return () => {
+      clearInterval(interval);
+      if (bumpTimeoutRef.current) clearTimeout(bumpTimeoutRef.current);
+    };
+  }, [phase, prefersReducedMotion]);
+
+  useEffect(() => {
+    if (prefersReducedMotion) return undefined;
+
+    const phaseDurations = [1500, 2000, 2000];
+    let raf = 0;
+
+    const tick = now => {
+      const duration = phaseDurations[phase];
+      const elapsed = now - phaseStartRef.current;
+      const progress = Math.max(0, Math.min(1, elapsed / duration));
+      setPhaseProgress(progress);
+      setScanProgress(phase === 0 ? progress : 0);
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, prefersReducedMotion]);
+
+  useEffect(() => {
+    if (prefersReducedMotion) return undefined;
+    if (bumpTimeoutRef.current) clearTimeout(bumpTimeoutRef.current);
+
+    if (phase === 2) {
+      setCounter(12);
+      setCounterBump(false);
+      bumpTimeoutRef.current = setTimeout(() => {
+        setCounter(13);
+        setCounterBump(true);
+      }, 700);
+    } else if (phase !== 2) {
+      setCounterBump(false);
+      setCounter(12);
+    }
+
+    return () => {
+      if (bumpTimeoutRef.current) clearTimeout(bumpTimeoutRef.current);
+    };
+  }, [phase, prefersReducedMotion]);
+
+  const shellOpacity = prefersReducedMotion ? 1 : phase === 2 && phaseProgress > 0.88 ? 1 - ((phaseProgress - 0.88) / 0.12) * 0.16 : 1;
+  const skeletonOpacity = prefersReducedMotion
+    ? 0.34
+    : 0.2 + ((Math.sin(performance.now() / 380) + 1) / 2) * 0.4;
+  const loadedOpacity = prefersReducedMotion ? 1 : phase === 0 ? Math.max(0, (phaseProgress - 0.82) / 0.18) * 0.2 : Math.min(1, phaseProgress * 1.8);
+  const ctaLift = prefersReducedMotion ? 0 : phase === 1 ? Math.max(0, 10 - phaseProgress * 14) : 0;
+  const ctaGlow = phase === 2 ? 0.45 + Math.sin(phaseProgress * Math.PI * 4) * 0.22 : phase === 1 ? Math.min(0.38, phaseProgress * 0.38) : 0;
+  const toastVisible = !prefersReducedMotion && phase === 2;
+  const liveVisible = prefersReducedMotion || phase > 0;
+  const counterVisible = prefersReducedMotion || phase === 2;
+  const progressGlow = 0.45 + (1 - Math.abs(scanProgress - 0.5) * 2) * 0.35;
+
+  return (
+    <div
+      style={{
+        background:'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+        border:'1px solid var(--border-2)',
+        borderRadius:10,
+        overflow:'hidden',
+        minHeight:200,
+        display:'flex',
+        flexDirection:'column',
+        boxShadow:'0 16px 36px rgba(0,0,0,0.32), inset 0 1px 0 rgba(244,241,234,0.04)',
+        opacity:shellOpacity,
+        transition:'opacity 260ms ease'
+      }}
+    >
+      <div
+        style={{
+          display:'flex',
+          alignItems:'center',
+          gap:8,
+          padding:'10px 12px',
+          borderBottom:'1px solid var(--border-1)',
+          background:'linear-gradient(180deg, rgba(19,20,24,0.96), rgba(11,11,12,0.96))'
+        }}
+      >
+        <span style={{ display:'flex', gap:5 }}>
+          {[0, 1, 2].map(i => (
+            <span key={i} style={{ width:8, height:8, borderRadius:'50%', background:'var(--obsidian-3)', border:'1px solid rgba(244,241,234,0.04)' }} />
+          ))}
+        </span>
+        <span
+          style={{
+            flex:1,
+            fontFamily:'var(--font-mono)',
+            fontSize:10,
+            color:'var(--fg3)',
+            textAlign:'center',
+            letterSpacing:'0.1em'
+          }}
+        >
+          marlow.co
+        </span>
+        <span
+          style={{
+            minWidth:62,
+            display:'inline-flex',
+            justifyContent:'flex-end',
+            fontFamily:'var(--font-mono)',
+            fontSize:10,
+            letterSpacing:'0.12em',
+            color:counterBump ? 'var(--acid)' : 'var(--fg3)',
+            textTransform:'uppercase',
+            transition:'color 220ms ease, transform 220ms ease, opacity 220ms ease',
+            transform:counterBump ? 'translateY(-1px)' : 'translateY(0)',
+            opacity:counterVisible ? 1 : 0
+          }}
+        >
+          {counter} visitors
+        </span>
+      </div>
+
+      <div
+        style={{
+          position:'relative',
+          flex:1,
+          padding:16,
+          display:'flex',
+          flexDirection:'column',
+          gap:10,
+          background:'radial-gradient(circle at top right, rgba(166,240,79,0.08), transparent 30%), linear-gradient(180deg, var(--obsidian-1), #08090b)'
+        }}
+      >
+        <div
+          style={{
+            position:'absolute',
+            top:0,
+            left:0,
+            right:0,
+            height:2,
+            overflow:'hidden',
+            background:'rgba(244,241,234,0.03)'
+          }}
+        >
+          <div
+            style={{
+              position:'absolute',
+              top:0,
+              left:`${-35 + scanProgress * 135}%`,
+              width:'35%',
+              height:'100%',
+              background:'linear-gradient(90deg, transparent, var(--acid), transparent)',
+              boxShadow:`0 0 14px rgba(166,240,79,${progressGlow})`,
+              opacity:phase === 0 || prefersReducedMotion ? 1 : 0,
+              transition:'opacity 220ms ease'
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            position:'absolute',
+            top:12,
+            right:12,
+            padding:'4px 8px',
+            borderRadius:999,
+            border:'1px solid rgba(166,240,79,0.24)',
+            background:'rgba(166,240,79,0.08)',
+            color:'var(--acid)',
+            fontFamily:'var(--font-mono)',
+            fontSize:9,
+            letterSpacing:'0.14em',
+            textTransform:'uppercase',
+            opacity:liveVisible ? 1 : 0,
+            transform:liveVisible ? 'translateY(0)' : 'translateY(-6px)',
+            transition:'opacity 260ms ease, transform 260ms ease'
+          }}
+        >
+          ● LIVE
+        </div>
+
+        <div style={{ display:'flex', flexDirection:'column', gap:8, paddingTop:6 }}>
+          <div
+            style={{
+              height:10,
+              width:'68%',
+              borderRadius:999,
+              background:'var(--fg1)',
+              opacity:phase === 0 && !prefersReducedMotion ? skeletonOpacity : loadedOpacity,
+              transform:`translateY(${phase === 1 ? Math.max(0, 8 - phaseProgress * 8) : 0}px)`,
+              transition:'opacity 260ms ease, transform 320ms ease'
+            }}
+          />
+          <div
+            style={{
+              height:10,
+              width:'52%',
+              borderRadius:999,
+              background:'var(--fg1)',
+              opacity:phase === 0 && !prefersReducedMotion ? skeletonOpacity * 0.92 : loadedOpacity * 0.94,
+              transform:`translateY(${phase === 1 ? Math.max(0, 12 - phaseProgress * 10) : 0}px)`,
+              transition:'opacity 260ms ease, transform 320ms ease'
+            }}
+          />
+        </div>
+
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:10 }}>
+          <div
+            style={{
+              height:5,
+              width:'84%',
+              borderRadius:999,
+              background:'var(--fg3)',
+              opacity:phase === 0 && !prefersReducedMotion ? skeletonOpacity * 0.8 : loadedOpacity * 0.72,
+              transition:'opacity 260ms ease'
+            }}
+          />
+          <div
+            style={{
+              height:5,
+              width:'64%',
+              borderRadius:999,
+              background:'var(--fg3)',
+              opacity:phase === 0 && !prefersReducedMotion ? skeletonOpacity * 0.7 : loadedOpacity * 0.62,
+              transition:'opacity 260ms ease'
+            }}
+          />
+        </div>
+
+        <div style={{ marginTop:'auto', display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:10 }}>
+          <div
+            style={{
+              height:34,
+              minWidth:120,
+              padding:'0 16px',
+              borderRadius:6,
+              display:'inline-flex',
+              alignItems:'center',
+              justifyContent:'center',
+              background:'var(--acid)',
+              color:'var(--obsidian)',
+              fontFamily:'var(--font-display)',
+              fontSize:12,
+              fontWeight:700,
+              letterSpacing:'0.08em',
+              textTransform:'uppercase',
+              transform:`translateY(${phase === 0 && !prefersReducedMotion ? 8 : ctaLift}px)`,
+              opacity:phase === 0 && !prefersReducedMotion ? 0.3 : 0.98,
+              boxShadow:`0 0 ${16 + ctaGlow * 24}px rgba(166,240,79,${0.12 + ctaGlow}), 0 10px 22px rgba(0,0,0,0.32)`,
+              transition:'transform 340ms cubic-bezier(0.16,1,0.3,1), opacity 260ms ease, box-shadow 220ms ease'
+            }}
+          >
+            Book consult
+          </div>
+          <div
+            style={{
+              width:66,
+              height:34,
+              borderRadius:6,
+              border:'1px solid var(--border-2)',
+              background:'rgba(255,255,255,0.02)',
+              opacity:phase === 0 && !prefersReducedMotion ? skeletonOpacity * 0.8 : 0.72,
+              transition:'opacity 260ms ease'
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            position:'absolute',
+            right:14,
+            bottom:14,
+            maxWidth:140,
+            padding:'10px 12px',
+            borderRadius:8,
+            background:'var(--acid)',
+            color:'var(--obsidian)',
+            fontFamily:'var(--font-body)',
+            fontSize:11,
+            fontWeight:700,
+            lineHeight:1.2,
+            boxShadow:'0 18px 30px rgba(0,0,0,0.32)',
+            opacity:toastVisible ? 1 : 0,
+            transform:toastVisible ? 'translate(0, 0)' : 'translate(18px, 16px)',
+            transition:'opacity 320ms cubic-bezier(0.16,1,0.3,1), transform 320ms cubic-bezier(0.16,1,0.3,1)'
+          }}
+        >
+          ✓ New lead captured
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const servicesCopy = {
   en: {
@@ -23,7 +355,7 @@ const servicesCopy = {
         accent: 'that convert.',
         body: 'Premium, responsive, and built to make customers trust you faster.',
         tags: ['Responsive', 'High Trust', 'Conversion', 'Premium UI'],
-        visual: <BrowserMini />
+        visual: <AnimatedBrowserMini />
       },
       {
         id: '03',
@@ -65,7 +397,7 @@ const servicesCopy = {
         accent: 'تُحوّل الزائر.',
         body: 'مواقع فاخرة ومتجاوبة، مبنية لتمنح العملاء ثقة أسرع في علامتك.',
         tags: ['متجاوب', 'ثقة عالية', 'تحويل', 'واجهة فاخرة'],
-        visual: <BrowserMini />
+        visual: <AnimatedBrowserMini />
       },
       {
         id: '03',

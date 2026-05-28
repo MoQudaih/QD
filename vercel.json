@@ -4,6 +4,8 @@
   "rewrites": [
     { "source": "/card/:slug", "destination": "/card/index.html" },
     { "source": "/card/:slug/", "destination": "/card/index.html" },
+    { "source": "/invite/:slug", "destination": "/invite/index.html" },
+    { "source": "/invite/:slug/", "destination": "/invite/index.html" },
     { "source": "/q/quote.js", "destination": "/q/quote.js" },
     { "source": "/q/quote.css", "destination": "/q/quote.css" },
     { "source": "/q/index.html", "destination": "/q/index.html" },

@@ -1,5 +1,10 @@
 import { getAuth } from './firebase.js';
 
+const allowedAdminEmails = new Set([
+  'mohammedqudaih107@gmail.com',
+  'mdaya0089@gmail.com'
+]);
+
 // Verifies the Firebase ID token from the Authorization header.
 // Throws on failure (which the caller should catch → 401).
 //
@@ -17,7 +22,9 @@ export async function requireAdmin(req) {
   const idToken = auth.slice('Bearer '.length).trim();
   const decoded = await getAuth().verifyIdToken(idToken);
   console.log('[admin-auth] token verified for uid:', decoded.uid, 'email:', decoded.email || '(no email)');
-  // v1: any authenticated Firebase user is admin (matches the existing pattern where
-  // the rules just check `request.auth != null`). If we add roles later, gate here.
+  if (!allowedAdminEmails.has(String(decoded.email || '').toLowerCase())) {
+    console.warn('[admin-auth] unauthorized admin email:', decoded.email || '(no email)');
+    throw new Error('Unauthorized access');
+  }
   return decoded;
 }

@@ -1,0 +1,478 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #0e0d12;
+  --surface: rgba(255, 255, 255, 0.08);
+  --surface-strong: rgba(12, 12, 18, 0.78);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: #f7f1ea;
+  --muted: rgba(247, 241, 234, 0.72);
+  --accent: #d9b45f;
+  --accent-strong: #f5d48b;
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+  --font-ar: 'Noto Naskh Arabic', serif;
+  --hero-overlay: linear-gradient(180deg, rgba(10, 10, 15, 0.18), rgba(10, 10, 15, 0.84));
+}
+
+body[data-theme='minimal-white'] {
+  --bg: #f7f2ea;
+  --surface: rgba(255, 255, 255, 0.6);
+  --surface-strong: rgba(255, 255, 255, 0.82);
+  --border: rgba(77, 66, 53, 0.12);
+  --text: #241d16;
+  --muted: rgba(36, 29, 22, 0.72);
+  --accent: #b98f56;
+  --accent-strong: #7f5f36;
+  --hero-overlay: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(247, 242, 234, 0.92));
+}
+
+body[data-theme='modern-black'] {
+  --bg: #060709;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-strong: rgba(8, 9, 12, 0.82);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #f4f6fb;
+  --muted: rgba(244, 246, 251, 0.7);
+  --accent: #7dd3fc;
+  --accent-strong: #bae6fd;
+  --hero-overlay: linear-gradient(180deg, rgba(6, 7, 9, 0.16), rgba(6, 7, 9, 0.88));
+}
+
+body[data-theme='arabic-luxury'] {
+  --bg: #120d10;
+  --surface: rgba(255, 240, 213, 0.08);
+  --surface-strong: rgba(18, 13, 16, 0.82);
+  --border: rgba(214, 180, 97, 0.16);
+  --text: #fff4e2;
+  --muted: rgba(255, 244, 226, 0.72);
+  --accent: #d6b461;
+  --accent-strong: #ffe0a6;
+  --hero-overlay: linear-gradient(180deg, rgba(18, 13, 16, 0.18), rgba(18, 13, 16, 0.88));
+}
+
+body[data-theme='floral-elegant'] {
+  --bg: #1a1116;
+  --surface: rgba(255, 228, 236, 0.09);
+  --surface-strong: rgba(26, 17, 22, 0.82);
+  --border: rgba(255, 182, 193, 0.18);
+  --text: #fff5f7;
+  --muted: rgba(255, 245, 247, 0.72);
+  --accent: #f4a6b8;
+  --accent-strong: #ffd0dc;
+  --hero-overlay: linear-gradient(180deg, rgba(26, 17, 22, 0.16), rgba(26, 17, 22, 0.9));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 20%, transparent), transparent 32%),
+    radial-gradient(circle at bottom right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 30%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+body[dir='rtl'] {
+  font-family: var(--font-ar);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.invite-shell {
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.invite-bg {
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: auto, 42px 42px, 42px 42px;
+  pointer-events: none;
+}
+
+.invite-topbar,
+.invite-main {
+  position: relative;
+  z-index: 1;
+}
+
+.invite-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 0;
+}
+
+.invite-brand {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.invite-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.invite-lang-toggle,
+.invite-audio-toggle {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.invite-main {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  padding: 18px 18px 64px;
+}
+
+.invite-loading,
+.invite-empty {
+  min-height: calc(100dvh - 120px);
+  display: grid;
+  place-items: center;
+}
+
+.invite-loading-card,
+.invite-empty-card {
+  width: min(100%, 520px);
+  padding: 32px 28px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--surface-strong);
+  backdrop-filter: blur(20px);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+}
+
+.invite-loading-badge,
+.invite-empty-badge,
+.invite-kicker,
+.invite-section-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.invite-page {
+  display: grid;
+  gap: 22px;
+}
+
+.invite-hero,
+.invite-section {
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  overflow: hidden;
+  background: var(--surface-strong);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+}
+
+.invite-hero {
+  position: relative;
+  min-height: 72dvh;
+  display: grid;
+  align-items: end;
+}
+
+.invite-hero-media,
+.invite-hero-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.invite-hero-media {
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.28), transparent 30%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 26%, transparent), transparent 45%),
+    #1f1c23;
+  background-size: cover;
+  background-position: center;
+  transform: scale(1.04);
+  animation: inviteHeroScale 1400ms ease both;
+}
+
+.invite-hero-overlay {
+  background: var(--hero-overlay);
+}
+
+.invite-hero-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 18px;
+  padding: 36px 22px 28px;
+}
+
+.invite-couple {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 11vw, 5.8rem);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  animation: inviteFadeUp 900ms ease both 120ms;
+}
+
+body[dir='rtl'] .invite-couple {
+  font-family: var(--font-ar);
+  line-height: 1.15;
+}
+
+.invite-title,
+.invite-countdown-note,
+.invite-venue-address,
+.invite-audio-copy,
+.invite-rsvp-feedback,
+.invite-loading-card h1,
+.invite-loading-card p,
+.invite-empty-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.invite-title {
+  font-size: 1rem;
+  max-width: 40rem;
+  animation: inviteFadeUp 900ms ease both 200ms;
+}
+
+.invite-event-meta,
+.invite-hero-actions,
+.invite-rsvp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.invite-meta-pill {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.invite-btn {
+  min-height: 50px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.invite-btn:hover {
+  transform: translateY(-1px);
+}
+
+.invite-btn-primary {
+  background: var(--accent);
+  color: #120f0a;
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.invite-btn-secondary,
+.invite-btn-outline {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.invite-section {
+  padding: 24px 20px;
+  animation: inviteFadeUp 900ms ease both;
+}
+
+.invite-section-head {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.invite-section-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 7vw, 3rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+body[dir='rtl'] .invite-section-head h2 {
+  font-family: var(--font-ar);
+}
+
+.invite-countdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.invite-count-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px 16px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+
+.invite-count-card strong {
+  font-size: clamp(2rem, 8vw, 3rem);
+  color: var(--accent-strong);
+}
+
+.invite-count-card span {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.invite-rsvp-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.invite-field {
+  display: grid;
+  gap: 8px;
+}
+
+.invite-field-full,
+.invite-rsvp-actions {
+  grid-column: 1 / -1;
+}
+
+.invite-field span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.invite-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.invite-textarea {
+  min-height: 120px;
+  padding: 14px;
+  resize: vertical;
+}
+
+.invite-rsvp-feedback {
+  min-height: 20px;
+  font-size: 14px;
+}
+
+@keyframes inviteHeroScale {
+  from { opacity: 0; transform: scale(1.08); }
+  to { opacity: 1; transform: scale(1.04); }
+}
+
+@keyframes inviteFadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (min-width: 860px) {
+  .invite-main {
+    padding-top: 26px;
+  }
+
+  .invite-hero-content {
+    padding: 56px 48px 44px;
+  }
+
+  .invite-section {
+    padding: 30px 28px;
+  }
+
+  .invite-countdown-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 699px) {
+  .invite-rsvp-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .invite-topbar {
+    padding-inline: 14px;
+  }
+
+  .invite-main {
+    padding-inline: 14px;
+    padding-bottom: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
