@@ -9,6 +9,22 @@
   <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+  <script>
+    (() => {
+      const isDev =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1';
+
+      window.QD_CONTACT_IS_DEV = isDev;
+
+      if (!isDev) {
+        document.documentElement.classList.add('is-production');
+        document.addEventListener('DOMContentLoaded', () => {
+          document.body.classList.add('is-production');
+        }, { once: true });
+      }
+    })();
+  </script>
   <style>
     body.qd-contact-page {
       min-height: 100vh;
@@ -245,6 +261,28 @@
       grid-template-columns: minmax(0, 1fr) 320px;
       gap: 24px;
       align-items: start;
+    }
+
+    .qd-contact-layout > .qd-form-card {
+      min-width: 0;
+    }
+
+    html.is-production .qd-contact-layout,
+    body.is-production .qd-contact-layout {
+      grid-template-columns: 1fr;
+    }
+
+    html.is-production .qd-summary-card,
+    html.is-production .dev-only,
+    body.is-production .qd-summary-card,
+    body.is-production .dev-only {
+      display: none !important;
+    }
+
+    html.is-production .qd-form-card,
+    body.is-production .qd-form-card {
+      width: min(100%, 960px);
+      margin-inline: auto;
     }
 
     .qd-form-card,
@@ -2280,6 +2318,7 @@
   </script>
   <script type="text/babel">
     const { useEffect, useMemo, useState } = React;
+    const IS_DEV = window.QD_CONTACT_IS_DEV === true;
 
     const LANGUAGE_STORAGE_KEY = 'qdLang';
     const VALID_LANGUAGES = new Set(['en', 'ar']);
@@ -4440,7 +4479,8 @@
               </div>
             </div>
 
-            <aside className="qd-summary-card">
+            {IS_DEV && (
+              <aside className="qd-summary-card dev-only">
               <div className="qd-eyebrow" style={{ color: 'var(--acid)' }}>{locale.jumpLabel}</div>
               <div className="qd-summary-stats">
                 <div className={`qd-stat ${hasInteracted ? '' : 'is-placeholder'}`}>
@@ -4475,7 +4515,8 @@
               <div className="qd-field-note qd-summary-footnote">
                 {hasInteracted ? `${answeredFieldsCount} / ${totalAnswerableFields}` : '— / —'}
               </div>
-            </aside>
+              </aside>
+            )}
           </section>
         </div>
       );

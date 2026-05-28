@@ -686,6 +686,15 @@ const getCardEditorDraftFromState = () => ({
 
 const buildCardEditorPreviewUrl = (slug) => getCardPublicUrl(slugifyCardValue(slug) || 'your-slug');
 const buildInvitationPreviewUrl = (slug) => getInvitePublicUrl(slugifyCardValue(slug) || 'your-invitation');
+const buildInvitationAdminPreviewUrl = (invitation) => {
+  const slug = slugifyCardValue(invitation?.slug || '');
+  const url = new URL(getInvitePublicUrl(slug || 'your-invitation'));
+  if (invitation?.id) {
+    url.searchParams.set('preview', '1');
+    url.searchParams.set('invitationId', invitation.id);
+  }
+  return url.toString();
+};
 
 const getInvitationStatus = (invitation) => {
   if (!invitation) return 'draft';
@@ -3421,7 +3430,10 @@ const copyInvitationLink = async (invitation) => {
 };
 
 const previewInvitation = (invitation) => {
-  window.open(getInvitePublicUrl(invitation.slug), '_blank', 'noopener,noreferrer');
+  const href = invitation?.id
+    ? buildInvitationAdminPreviewUrl(invitation)
+    : getInvitePublicUrl(invitation.slug);
+  window.open(href, '_blank', 'noopener,noreferrer');
 };
 
 const shareInvitationWhatsapp = (invitation) => {
@@ -4200,7 +4212,7 @@ const handleDocumentClick = async (event) => {
 
   if (action === 'preview-invitation-draft') {
     const draft = ensureInvitationEditorData();
-    previewInvitation({ slug: draft.slug });
+    previewInvitation({ id: state.invitationEditor.id, slug: draft.slug });
     return;
   }
 

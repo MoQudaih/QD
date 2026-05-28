@@ -1,8 +1,12 @@
-import { db } from '../firebase.js';
+import { auth, db } from '../firebase.js';
+import {
+  onAuthStateChanged
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -101,16 +105,40 @@ const state = {
   isAudioPlaying: false
 };
 
-const getSlug = () => {
+const withTimeout = (promise, ms = 12000) => Promise.race([
+  promise,
+  new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error('Invitation request timed out.')), ms);
+  })
+]);
+
+const stopLoading = () => {
+  loadingEl.hidden = true;
+};
+
+const ensureResolvedState = () => {
+  stopLoading();
+  if (!pageEl.hidden || !emptyEl.hidden) return;
+  showEmpty('The invitation could not be rendered.', 'Invitation unavailable');
+};
+
+const getRequestContext = () => {
   const params = new URLSearchParams(window.location.search);
-  const fromQuery = params.get('slug');
-  if (fromQuery) return fromQuery.trim().toLowerCase();
-  const parts = window.location.pathname.split('/').filter(Boolean);
-  const idx = parts.indexOf('invite');
-  if (idx >= 0 && parts[idx + 1] && parts[idx + 1] !== 'index.html') {
-    return parts[idx + 1].trim().toLowerCase();
+  const preview = params.get('preview') === '1';
+  const invitationId = String(params.get('invitationId') || params.get('id') || '').trim();
+  const fromQuery = String(params.get('slug') || '').trim().toLowerCase();
+  if (fromQuery) {
+    return { slug: fromQuery, preview, invitationId };
   }
-  return '';
+
+  const cleanPath = window.location.pathname.replace(/\/+$/, '');
+  const parts = cleanPath.split('/').filter(Boolean).map((part) => decodeURIComponent(part.trim().toLowerCase()));
+  const idx = parts.indexOf('invite');
+  const slug = idx >= 0 && parts[idx + 1] && parts[idx + 1] !== 'index.html'
+    ? parts[idx + 1]
+    : '';
+
+  return { slug, preview, invitationId };
 };
 
 const esc = (value) => String(value ?? '')
@@ -150,7 +178,7 @@ const setTheme = (theme) => {
 };
 
 const showEmpty = (message, title) => {
-  loadingEl.hidden = true;
+  stopLoading();
   pageEl.hidden = true;
   emptyEl.hidden = false;
   emptyEl.innerHTML = `
@@ -160,6 +188,42 @@ const showEmpty = (message, title) => {
       <p>${esc(message)}</p>
     </div>
   `;
+};
+
+const waitForAuthReady = (timeoutMs = 8000) => new Promise((resolve) => {
+  let settled = false;
+  const finish = (user) => {
+    if (settled) return;
+    settled = true;
+    resolve(user || null);
+  };
+
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    unsubscribe();
+    finish(user);
+  }, () => {
+    unsubscribe();
+    finish(null);
+  });
+
+  window.setTimeout(() => {
+    try { unsubscribe(); } catch {}
+    finish(auth.currentUser || null);
+  }, timeoutMs);
+});
+
+const classifyInviteError = (error, { preview = false } = {}) => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  if (code.includes('permission') || message.includes('permission')) {
+    return preview
+      ? { title: 'Preview unavailable', message: 'This preview requires an authenticated admin session.' }
+      : { title: labels.en.missing, message: 'This invitation is unavailable for public viewing.' };
+  }
+  if (message.includes('timed out')) {
+    return { title: 'Connection timed out', message: 'The invitation took too long to load. Please refresh and try again.' };
+  }
+  return { title: 'Invitation unavailable', message: 'A loading error occurred while fetching this invitation.' };
 };
 
 const applyLanguage = () => {
@@ -360,25 +424,47 @@ const renderInvitation = () => {
 };
 
 const loadInvitation = async () => {
-  const slug = getSlug();
-  if (!slug) {
-    showEmpty(labels.en.invalid, labels.en.missing);
-    return;
-  }
-
+  const { slug, preview, invitationId } = getRequestContext();
+  console.log('[invite] extracted slug:', slug);
+  console.log('[invite] preview mode:', preview, 'invitationId:', invitationId || '(none)');
   try {
-    const invitationsRef = collection(db, 'weddingInvitations');
-    const slugQuery = query(invitationsRef, where('slug', '==', slug), limit(1));
-    const snapshot = await getDocs(slugQuery);
-    const docSnap = snapshot.docs[0];
+    let invitation = null;
 
-    if (!docSnap) {
+    if (preview && invitationId) {
+      const adminUser = await waitForAuthReady();
+      console.log('[invite] preview auth user:', adminUser?.email || '(none)');
+      const docSnap = await withTimeout(getDoc(doc(db, 'weddingInvitations', invitationId)));
+      console.log('[invite] preview document exists:', docSnap.exists());
+      if (docSnap.exists()) {
+        invitation = { id: docSnap.id, ...docSnap.data() };
+      }
+    } else {
+      if (!slug) {
+        showEmpty(labels.en.invalid, labels.en.missing);
+        return;
+      }
+      const invitationsRef = collection(db, 'weddingInvitations');
+      const slugQuery = query(
+        invitationsRef,
+        where('slug', '==', slug),
+        where('active', '==', true),
+        limit(1)
+      );
+      const snapshot = await withTimeout(getDocs(slugQuery));
+      console.log('[invite] firestore query result count:', snapshot.size);
+      const docSnap = snapshot.docs[0];
+      if (docSnap) {
+        invitation = { id: docSnap.id, ...docSnap.data() };
+      }
+    }
+
+    if (!invitation) {
       showEmpty(labels.en.invalid, labels.en.missing);
       return;
     }
+    console.log('[invite] loaded invitation data:', invitation);
 
-    const invitation = { id: docSnap.id, ...docSnap.data() };
-    if (invitation.active === false || invitation.status === 'disabled') {
+    if (!preview && (invitation.active === false || invitation.status === 'disabled')) {
       showEmpty(labels.en.inactive, labels.en.missing);
       return;
     }
@@ -388,9 +474,27 @@ const loadInvitation = async () => {
     renderInvitation();
   } catch (error) {
     console.error('[invite] load failed:', error);
-    showEmpty(labels.en.invalid, labels.en.missing);
+    const view = classifyInviteError(error, { preview });
+    console.error('[invite] classified load error:', view);
+    showEmpty(view.message, view.title);
+  } finally {
+    ensureResolvedState();
   }
 };
+
+window.addEventListener('error', (event) => {
+  console.error('[invite] runtime error:', event.error || event.message || event);
+  if (!loadingEl.hidden) {
+    showEmpty('A runtime error occurred while rendering the invitation.', 'Invitation unavailable');
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[invite] unhandled promise rejection:', event.reason || event);
+  if (!loadingEl.hidden) {
+    showEmpty('A loading error occurred while rendering the invitation.', 'Invitation unavailable');
+  }
+});
 
 langToggleEl.addEventListener('click', () => {
   state.language = state.language === 'ar' ? 'en' : 'ar';
